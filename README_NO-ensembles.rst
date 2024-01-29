@@ -15,32 +15,37 @@ Available Ensemble Neural Operators
 Project setup on the euler cluster at ETH
 -----------------------------------------
 
-At installation, create a virtual environment (venv) for Python:
+At installation, create a virtual environment (venv) for Python in your home:
 
 .. code::
+    
+  cd ~
+  module load gcc/8.2.0 python/3.10.4
   python -m venv --system-site-packages venv-NO-ens
 
 In every new terminal, load the environment modules on euler 
 and activate the python environment:
 
 .. code::
+
   module load gcc/8.2.0 python/3.10.4
-  source venv-NO-ens/bin/activate
+  source ~/venv-NO-ens/bin/activate
 
 Install ``neuraloperator``, check out this branch, and its dependencies within the 
 venv in developer mode:
 
 .. code::
-  cd your_home_dir
-  mkdir git
-  cd git/
+
+  cd your_working_dir
+  mkdir git/dana-grund/
+  cd git/dana-grund/
   git clone https://github.com/dana-grund/neuraloperator
-  git checkout NO-ensembles
   cd neuraloperator
+  git checkout NO-ensembles
   pip install -e .
   pip install -r requirements.txt
 
-Test the installation with the quickstart and tests from ``README.rst``.
+Test the installation with the quickstart from ``README.rst``.
 
 
 Working on the euler cluster at ETH
@@ -58,6 +63,7 @@ follow https://scicomp.ethz.ch/wiki/Accessing_the_clusters#SSH_keys
 For convenience, set up the ssh config file on your local mashine as 
 
 .. code::
+
     Host euler
         HostName euler.ethz.ch
         IdentityFile ~/.ssh/the_file_you_generated_with_ssh_keygen
@@ -72,6 +78,7 @@ and add it to your git profile online. Then, set the ssh config file
 ``./ssh/config`` in your home as
 
 .. code::
+
   Host github.com
       HostName github.com
       IdentityFile ~/.ssh/the_file_you_generated_with_ssh_keygen
