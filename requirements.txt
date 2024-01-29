@@ -8,3 +8,4 @@ matplotlib
 opt-einsum
 h5py
 zarr
+numpy==1.23.5 # prevents a numba-xarray bug with numpy=1.24.2
