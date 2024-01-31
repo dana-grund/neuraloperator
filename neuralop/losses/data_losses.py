@@ -141,6 +141,7 @@ class LpLoss(object):
         return diff
 
     def __call__(self, y_pred, y, **kwargs):
+        # Lp loss flattens over all channels
         return self.rel(y_pred, y)
 
 
@@ -281,9 +282,19 @@ class H1Loss(object):
             
         return diff
 
-
+    def call_by_channel(self, c, y_pred, y, h=None, **kwargs):
+        y_pred_ = torch.unsqueeze(y_pred[:,c,:,:],1)
+        y_      = torch.unsqueeze(y[:,c,:,:],1)
+        
+        return self.rel(y_pred_, y_, h=h)
+        
     def __call__(self, y_pred, y, h=None, **kwargs):
-        return self.rel(y_pred, y, h=h)
+        # H1 loss should treat channels separately to compute the gradient
+        loss = self.call_by_channel(0, y_pred, y, h=h)
+        n_channels = y_pred.shape[1]
+        for c in range(1,n_channels):
+            loss += self.call_by_channel(c, y_pred, y, h=h)
+        return loss
 
 
 class IregularLpqLoss(torch.nn.Module):
