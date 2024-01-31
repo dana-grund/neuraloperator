@@ -126,6 +126,9 @@ class Trainer:
         errors = None
 
         for epoch in range(self.n_epochs):
+            
+            if self.verbose: # and epoch%10==0:
+                print(f'\nTraining epoch {epoch}.')
 
             if self.callbacks:
                 self.callbacks.on_epoch_start(epoch=epoch)
