@@ -79,3 +79,7 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+# Saved model states
+*.pkl
+*.pt
