@@ -184,28 +184,35 @@ class ShearLayerDataset(Dataset):
         T, # 1,2,3,4
     ):
         """Data location"""
-        p = '/cluster/work/math/mroberto-datashare/data_shear/'
-        self.file_data = p + f'N{res}_1.nc'
-        # XXX 40,000 more available in _0 ... _4
+        p = '/cluster/work/climate/dgrund/data_shear_layer_2D/'
+        self.file_data_test = p + f'N{res}_4.nc'
         
-        sample_max = 9999 # n_max = 10,000
-        sample_train_max = 7999
-        
-        """Fixed split into train and test datasets"""
-        self.length = n
-        if which == "training":
-            self.start = 10000 # quick fix for missing data
-        elif which == "test":
-            self.start = sample_train_max  - self.length + 10000
-        else:
-            print("Flag 'which' of ShearLayerDataset undefined.")
-
         if res not in [64, 128]:
             raise ValueError(
                 f"Only resolutions 64 and 128 are available currently, not {res}."
             )
+        if res not in [64]:
+            raise ValueError(
+                f"Res 128 has not been copied and processed yet (about 90G)."
+            )
         self.res = res
+            
+        """Fixed split into train and test datasets"""
+        self.length = n
+        if which == "training":
+            if res == 64:
+                self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(4)] # 40,000 samples for res=64
+                self.start = 0
+            if res == 128: # first batch of data is missing
+                self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(1,4)] # 30,000 samples for res=128
+                self.start = 10,000
+        elif which == "test":
+            self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(4,5)] # 10,000 samples for res=64
+            self.start = 40,000
+        else:
+            print("Flag 'which' of ShearLayerDataset undefined.")
 
+        self.which = which
         self.ndim = 4 # (batch_size, channels, res, res), see UnitGaussianNormalizer
         # same ndim for x and y
         self.T = T
@@ -219,22 +226,46 @@ class ShearLayerDataset(Dataset):
         self,
         index,
     ):
-        var = f'sample_{self.start + index}'
+        if self.which=='train':
+            assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
+        
+        if self.which=='test':
+            assert index < 10_000, f'Requesting index {index} for testing but only 10_000 are available.'
 
-        ds = xr.open_dataset(self.file_data)[var]
-        inputs = ds.isel(t=0).to_numpy()
-        labels = ds.isel(t=self.T).to_numpy()
+        i_file = index//10_000
+
+        print('Opening', self.file_data_list[i_file])
+        
+        ds = xr.open_dataset(
+            self.file_data_list[i_file],
+            engine='zarr',
+        ).sel(e=index)
+        
+        print('Opened.')
+        
+        inputs = np.stack(
+            [
+                ds['u'].isel(t=0).to_numpy(),
+                ds['v'].isel(t=0).to_numpy(),
+            ],
+            axis=0,
+        )
+        labels = np.stack(
+            [
+                ds['u'].isel(t=self.T).to_numpy(),
+                ds['v'].isel(t=self.T).to_numpy(),
+            ],
+            axis=0,
+        )
         
         ds.close()
 
         inputs = torch.from_numpy(
             inputs
-            # np.expand_dims(inputs,axis=0),
         ).type(torch.float32)
 
         labels = torch.from_numpy(
             labels
-            # np.expand_dims(labels,axis=0)
         ).type(torch.float32)
 
         return {
