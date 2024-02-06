@@ -23,7 +23,7 @@ device = 'cpu'
 folder = '/cluster/work/climate/dgrund/git/dana-grund/neuraloperator/examples/plot_FNO_shear'
 
 # %%
-# Loade the Navier--Stokes dataset
+# Load the Navier--Stokes dataset
 train_loader, test_loaders, data_processor = load_shear_flow(
         n_train=10,             # 1000
         batch_size=32, 

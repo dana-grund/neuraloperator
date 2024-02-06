@@ -83,3 +83,7 @@ target/
 # Saved model states
 *.pkl
 *.pt
+
+# Slurm files
+*.out
+*.err
