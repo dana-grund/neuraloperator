@@ -20,7 +20,7 @@ At installation, create a virtual environment (venv) for Python in your home:
 .. code::
     
   cd ~
-  module load gcc/8.2.0 python/3.10.4
+  module load gcc/8.2.0 openblas/0.3.20 cuda/11.8.0 cudnn/8.8.1.3 nccl/2.11.4-1 python_gpu/3.11.2
   python -m venv --system-site-packages venv-NO-ens
 
 In every new terminal, load the environment modules on euler 
@@ -28,7 +28,7 @@ and activate the python environment:
 
 .. code::
 
-  module load gcc/8.2.0 python/3.10.4
+  module load gcc/8.2.0 openblas/0.3.20 cuda/11.8.0 cudnn/8.8.1.3 nccl/2.11.4-1 python_gpu/3.11.2
   source ~/venv-NO-ens/bin/activate
 
 Install ``neuraloperator``, check out this branch, and its dependencies within the 
