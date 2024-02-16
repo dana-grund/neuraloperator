@@ -2,6 +2,7 @@ import torch
 from torch.cuda import amp
 from timeit import default_timer
 import pathlib
+from tqdm import tqdm
 
 from .callbacks import PipelineCallback
 import neuralop.mpu.comm as comm
@@ -125,10 +126,10 @@ class Trainer:
 
         errors = None
 
-        for epoch in range(self.n_epochs):
+        for epoch in tqdm(range(self.n_epochs)):
             
             if self.verbose: # and epoch%10==0:
-                print(f'\nTraining epoch {epoch}.')
+                print(f'\nTraining epoch {epoch+1}/{self.n_epochs}.')
 
             if self.callbacks:
                 self.callbacks.on_epoch_start(epoch=epoch)
