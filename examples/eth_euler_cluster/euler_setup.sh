@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# module load openmpi/4.1.2
-module load gcc/8.2.0
-module load python/3.10.4
+module load gcc/8.2.0 openblas/0.3.20 cuda/11.8.0 cudnn/8.8.1.3 nccl/2.11.4-1 python_gpu/3.11.2
 
 VENV_DIR=/cluster/home/dgrund/venv-NO-ens
 VENV_ACT=${VENV_DIR}/bin/activate
@@ -13,8 +11,3 @@ if test -f "$VENV_ACT"; then
 else
    echo "Virtual env not found."
 fi
-
-echo Using the following python: 
-which python 
-echo -----
-echo

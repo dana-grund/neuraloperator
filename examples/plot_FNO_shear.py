@@ -10,6 +10,7 @@ Training a TFNO on the shear layer experiment
 
 import torch
 import matplotlib.pyplot as plt
+import argparse
 import sys
 import os
 
@@ -19,17 +20,27 @@ from neuralop.datasets import load_shear_flow
 from neuralop.utils import count_model_params
 from neuralop import LpLoss, H1Loss
 
-device = 'cpu'
-folder = '/cluster/work/climate/dgrund/git/dana-grund/neuraloperator/examples/plot_FNO_shear'
+parser = argparse.ArgumentParser(description='Train FNO for 2D shear')
+parser.add_argument('--res', type=int, default=64, required=False,
+                    help='training resolution (64 or 128)')
+parser.add_argument('--gpu', action=argparse.BooleanOptionalAction, default=False, required=False,
+                    help='Device to run on. Default (False): cpu')
+parser.add_argument('-f', '--folder', type=str, default='plot_FNO_shear', required=False,
+                    help='Where to store results.')
+args = parser.parse_args()
+
+device = 'cuda' if args.gpu else 'cpu'
+folder = args.folder
+res = args.res
 
 # %%
 # Load the Navier--Stokes dataset
 train_loader, test_loaders, data_processor = load_shear_flow(
-        n_train=100,             # 40_000
+        n_train=10,             # 40_000
         batch_size=32, 
-        train_resolution=64,
+        train_resolution=res,
         test_resolutions=[64],  # [64,128], 
-        n_tests=[100],          # [10_000, 10_000],
+        n_tests=[10],           # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True
 )
