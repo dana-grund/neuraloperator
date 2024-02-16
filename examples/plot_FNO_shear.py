@@ -25,11 +25,11 @@ folder = '/cluster/work/climate/dgrund/git/dana-grund/neuraloperator/examples/pl
 # %%
 # Load the Navier--Stokes dataset
 train_loader, test_loaders, data_processor = load_shear_flow(
-        n_train=10,             # 1000
+        n_train=100,             # 40_000
         batch_size=32, 
         train_resolution=64,
         test_resolutions=[64],  # [64,128], 
-        n_tests=[16],           # [50, 10],
+        n_tests=[100],          # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True
 )
@@ -84,7 +84,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=2, # 20
+trainer = Trainer(model=model, n_epochs=5, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,

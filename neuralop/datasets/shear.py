@@ -1,6 +1,8 @@
 from pathlib import Path
 import xarray as xr
 import numpy as np
+import os
+
 import torch
 from torch.utils.data import Dataset
 
@@ -184,30 +186,25 @@ class ShearLayerDataset(Dataset):
         T, # 1,2,3,4
     ):
         """Data location"""
-        p = '/cluster/work/climate/dgrund/data_shear_layer_2D/'
-        self.file_data_test = p + f'N{res}_4.nc'
+        p = '/cluster/work/climate/webesimo'
+        self.file_data = os.path.join(
+            p, f'data_{res}.zarr'
+        )
         
         if res not in [64, 128]:
             raise ValueError(
                 f"Only resolutions 64 and 128 are available currently, not {res}."
-            )
-        if res not in [64]:
-            raise ValueError(
-                f"Res 128 has not been copied and processed yet (about 90G)."
             )
         self.res = res
             
         """Fixed split into train and test datasets"""
         self.length = n
         if which == "training":
-            if res == 64:
-                self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(4)] # 40,000 samples for res=64
+            if res == 64: # 40,000 samples for res=64
                 self.start = 0
-            if res == 128: # first batch of data is missing
-                self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(1,4)] # 30,000 samples for res=128
+            if res == 128: # first batch of data is missing # 30,000 samples for res=128
                 self.start = 10,000
-        elif which == "test":
-            self.file_data_list = [p + f'N{res}_{i}.zarr' for i in range(4,5)] # 10,000 samples for res=64
+        elif which == "test": # 10,000 samples for res=64 # 10,000 samples for both
             self.start = 40,000
         else:
             print("Flag 'which' of ShearLayerDataset undefined.")
@@ -227,21 +224,18 @@ class ShearLayerDataset(Dataset):
         index,
     ):
         if self.which=='train':
-            assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
+            if self.res == 64:
+                assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
+            if self.res == 128:
+                assert index < 30_000, f'Requesting index {index} for training but only 40_000 are available.'
         
         if self.which=='test':
             assert index < 10_000, f'Requesting index {index} for testing but only 10_000 are available.'
-
-        i_file = index//10_000
-
-        print('Opening', self.file_data_list[i_file])
         
-        ds = xr.open_dataset(
-            self.file_data_list[i_file],
-            engine='zarr',
-        ).sel(e=index)
-        
-        print('Opened.')
+        ds = xr.open_zarr(
+            self.file_data,
+            consolidated=True,
+        ).sel(member=index)
         
         inputs = np.stack(
             [
