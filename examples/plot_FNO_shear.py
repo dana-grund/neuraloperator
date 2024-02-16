@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import argparse
 import sys
 import os
+import time
 
 from neuralop.models import TFNO
 from neuralop import Trainer
@@ -95,7 +96,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=5, # 20
+trainer = Trainer(model=model, n_epochs=10, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -106,6 +107,7 @@ trainer = Trainer(model=model, n_epochs=5, # 20
 
 # %%
 # Actually train the model
+start = time.time()
 trainer.train(train_loader=train_loader,
               test_loaders=test_loaders,
               optimizer=optimizer,
@@ -114,6 +116,9 @@ trainer.train(train_loader=train_loader,
               training_loss=train_loss,
               eval_losses=eval_losses)
 model.save_checkpoint(save_folder=folder, save_name='example_fno_shear')
+end = time.time()
+print(f'Training took {end-start} s.')
+
 
 # %%
 # Plot the prediction, and compare with the ground-truth 
