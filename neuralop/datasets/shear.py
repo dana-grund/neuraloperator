@@ -1,6 +1,7 @@
 from pathlib import Path
 import xarray as xr
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 
 import torch
@@ -170,6 +171,56 @@ def load_shear_flow(
     )
     
     return train_loader, test_loaders, data_processor
+
+def plot_shear_flow_test(
+    test_db,
+    model,
+    data_processor,
+    n_plot=5,
+    save_file='fig-shear.png',
+):
+    """
+    Plots the shear flow dataset.
+    Rows: the first n_plor test samples.
+    Columns: inputs (t=0), labels (t>0), prediction (t>0).    
+    """
+    fig = plt.figure(figsize=(7, 2*n_plot))
+    for index in range(n_plot):
+        
+        data = test_db[index]
+        data = data_processor.preprocess(data, batched=False)
+
+        x = data['x'].unsqueeze(0)
+        out = model(x)                  # input u and v
+
+        x = data['x'][0,:,:]            # plot u component only
+        y = data['y'].squeeze()[0,:,:]  # plot u component only
+        
+        ax = fig.add_subplot(n_plot, 3, index*3 + 1)
+        ax.imshow(x, cmap='gray')
+        if index == 0: 
+            ax.set_title('Input x')
+        plt.xticks([], [])
+        plt.yticks([], [])
+
+        ax = fig.add_subplot(n_plot, 3, index*3 + 2)
+        ax.imshow(y)
+        if index == 0: 
+            ax.set_title('Ground-truth y')
+        plt.xticks([], [])
+        plt.yticks([], [])
+
+        ax = fig.add_subplot(n_plot, 3, index*3 + 3)
+        ax.imshow(out.squeeze()[0,:,:].detach().numpy())
+        if index == 0: 
+            ax.set_title('Model prediction')
+        plt.xticks([], [])
+        plt.yticks([], [])
+
+    fig.suptitle('Inputs, ground-truth output and prediction.', y=0.98)
+    plt.tight_layout()
+    plt.savefig(save_file)
+    fig.show()
 
 #------------------------------------------------------------------------------
 

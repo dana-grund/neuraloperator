@@ -9,7 +9,6 @@ Training a TFNO on the shear layer experiment
 
 
 import torch
-import matplotlib.pyplot as plt
 import argparse
 import sys
 import os
@@ -17,7 +16,7 @@ import time
 
 from neuralop.models import TFNO
 from neuralop import Trainer
-from neuralop.datasets import load_shear_flow
+from neuralop.datasets import load_shear_flow, plot_shear_flow_test
 from neuralop.utils import count_model_params
 from neuralop import LpLoss, H1Loss
 
@@ -96,7 +95,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=10, # 20
+trainer = Trainer(model=model, n_epochs=2, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -124,48 +123,14 @@ print(f'Training took {end-start} s.')
 # Plot the prediction, and compare with the ground-truth 
 # Note that this is a minimal working example for debugging only
 # In practice we would train a Neural Operator on one or multiple GPUs
-
 test_db = test_loaders[64].dataset
 model = TFNO.from_checkpoint(save_folder=folder, save_name='example_fno_shear')
-
-n_plot = 5
-fig = plt.figure(figsize=(7, 2*n_plot))
-for index in range(n_plot):
-    
-    data = test_db[index]
-    data = data_processor.preprocess(data, batched=False)
-
-    x = data['x'].unsqueeze(0)
-    out = model(x)                  # input u and v
-
-    x = data['x'][0,:,:]            # plot u component only
-    y = data['y'].squeeze()[0,:,:]  # plot u component only
-    
-    ax = fig.add_subplot(n_plot, 3, index*3 + 1)
-    ax.imshow(x, cmap='gray')
-    if index == 0: 
-        ax.set_title('Input x')
-    plt.xticks([], [])
-    plt.yticks([], [])
-
-    ax = fig.add_subplot(n_plot, 3, index*3 + 2)
-    ax.imshow(y)
-    if index == 0: 
-        ax.set_title('Ground-truth y')
-    plt.xticks([], [])
-    plt.yticks([], [])
-
-    ax = fig.add_subplot(n_plot, 3, index*3 + 3)
-    ax.imshow(out.squeeze()[0,:,:].detach().numpy())
-    if index == 0: 
-        ax.set_title('Model prediction')
-    plt.xticks([], [])
-    plt.yticks([], [])
-
-fig.suptitle('Inputs, ground-truth output and prediction.', y=0.98)
-plt.tight_layout()
-plt.savefig(
-    os.path.join(folder,'fig-example_shear.png')
+plot_shear_flow_test(
+    test_db,
+    model,
+    data_processor,
+    n_plot=5,
+    save_file=os.path.join(
+        folder,'fig-example_shear.png'
+    ),
 )
-fig.show()
- 
