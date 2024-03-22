@@ -3,6 +3,8 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from tabulate import tabulate
+#import xskillscore as xs
 
 import torch
 from torch.utils.data import Dataset
@@ -26,12 +28,18 @@ def load_shear_flow(
     encoding="channel-wise",
     channel_dim=2,
     T=20,
+    ensemble=True
 ):
     """Loads the 2D shear layer dataset
 
-    10.000 samples are available with perturbed initial shear.
+    (10.000 samples are available with perturbed initial shear.
     max 8.000 samples (the first ones) are used for training.
-    max 2.000 samples (the last ones) are used for validation.
+    max 2.000 samples (the last ones) are used for validation.)
+    
+    For resolution=64 40'000 samples are available for training
+    and 10'000 for testing.
+    For resolution=128 30'000 amples are available for training 
+    and 10'000 for testing.
 
     Parameters
     ----------
@@ -72,6 +80,7 @@ def load_shear_flow(
         channel_dim,
         which='training',
         T=T,
+        ensemble=ensemble
     )
         
     train_loader = torch.utils.data.DataLoader(
@@ -98,6 +107,7 @@ def load_shear_flow(
             channel_dim,
             which='test',
             T=T,
+            ensemble=ensemble
         )
 
         test_loader = torch.utils.data.DataLoader(
@@ -181,7 +191,7 @@ def plot_shear_flow_test(
 ):
     """
     Plots the shear flow dataset.
-    Rows: the first n_plor test samples.
+    Rows: the first n_plot test samples.
     Columns: inputs (t=0), labels (t>0), prediction (t>0).    
     """
     fig = plt.figure(figsize=(7, 2*n_plot))
@@ -195,6 +205,12 @@ def plot_shear_flow_test(
 
         x = data['x'][0,:,:]            # plot u component only
         y = data['y'].squeeze()[0,:,:]  # plot u component only
+        
+        # Bring x and y back to cpu memory for the plotting
+        x = x.to(device="cpu")
+        y = y.to(device="cpu")
+        # Same for out
+        out = out.to(device="cpu")
         
         ax = fig.add_subplot(n_plot, 3, index*3 + 1)
         ax.imshow(x, cmap='gray')
@@ -216,11 +232,79 @@ def plot_shear_flow_test(
             ax.set_title('Model prediction')
         plt.xticks([], [])
         plt.yticks([], [])
+        
+    #rmse = compute_deterministic_score(out, data["y"].squeeze())
+    
+    #print(f"{rmse.size}")
+    
+    title = 'Inputs, ground-truth output and prediction.'
 
-    fig.suptitle('Inputs, ground-truth output and prediction.', y=0.98)
+    fig.suptitle(title, y=0.98)
     plt.tight_layout()
     plt.savefig(save_file)
     fig.show()
+    
+    
+
+def compute_deterministic_scores(
+    test_db,
+    model,
+    data_processor,
+    losses
+):
+    """
+    Compute scores based on a dictionary of losses ('losses').
+    Outputs two dictionaries with the abs and rel scores of all the losses.
+    """ 
+    
+    scores_abs = {}
+    scores_rel = {}
+    for loss_name in losses:
+        #print(f'{loss_name}, {losses[loss_name]}')
+        scores_abs[loss_name] = 0.0
+        scores_rel[loss_name] = 0.0
+    
+    # Compute abs/rel scores for all losses, averaged over all test samples
+    n = test_db.__len__()
+    for sample_index in range(n):
+        data = test_db[sample_index]
+        data = data_processor.preprocess(data, batched=False)
+        y = data['y'].squeeze()
+        out = model(data['x'].unsqueeze(0))
+        out = out.squeeze()
+        
+        for loss_name in losses:
+            scores_abs[loss_name] += (1./n)*(losses[loss_name].abs(out, y)).item()
+            scores_rel[loss_name] += (1./n)*(losses[loss_name].rel(out, y)).item()
+            
+    return scores_abs, scores_rel
+
+def print_scores(
+    scores_abs,
+    scores_rel,
+    probScores,
+    reductions
+):
+    """
+    Prints rel, abs and probabilistic scores.
+    Input are dictionaries.
+    """
+    print(f"Deterministic Scores (reductions: {reductions}):")
+    det_row1 = list(scores_abs.keys())
+    det_row1.insert(0, '-')
+    det_row2 = list(scores_abs.values())
+    det_row2.insert(0, "Absolute")
+    det_row3 = list(scores_rel.values())
+    det_row3.insert(0, "Relative")
+    det_table = [det_row1, det_row2, det_row3]
+    print(tabulate(det_table, headers='firstrow', tablefmt='fancy_grid'))
+    
+    print("\nProbabilistic Scores:")
+    prob_row1 = list(probScores.keys())
+    prob_row2 = list(probScores.values())
+    prob_table = [prob_row1, prob_row2]
+    print(tabulate(prob_table, headers='firstrow', tablefmt='fancy_grid'))
+    
 
 #------------------------------------------------------------------------------
 
@@ -235,12 +319,18 @@ class ShearLayerDataset(Dataset):
         channel_dim,
         which, # train, test
         T, # 1,2,3,4
+        ensemble
     ):
         """Data location"""
         p = '/cluster/work/climate/webesimo'
-        self.file_data = os.path.join(
-            p, f'data_{res}.zarr'
-        )
+        if ensemble:
+            self.file_data = os.path.join(
+                p, 'data_macro_micro.zarr'
+            )
+        else:
+            self.file_data = os.path.join(
+                p, f'data_N{res}.zarr'
+            )
         
         if res not in [64, 128]:
             raise ValueError(
@@ -250,12 +340,9 @@ class ShearLayerDataset(Dataset):
             
         """Fixed split into train and test datasets"""
         self.length = n
-        if which == "training":
-            if res == 64: # 40,000 samples for res=64
-                self.start = 0
-            if res == 128: # first batch of data is missing # 30,000 samples for res=128
-                self.start = 10,000
-        elif which == "test": # 10,000 samples for res=64 # 10,000 samples for both
+        if which == "training": # 40,000 samples for both 64 and 128 resolution
+            self.start = 0
+        elif which == "test": # 10,000 samples for both
             self.start = 40,000
         else:
             print("Flag 'which' of ShearLayerDataset undefined.")
@@ -264,6 +351,7 @@ class ShearLayerDataset(Dataset):
         self.ndim = 4 # (batch_size, channels, res, res), see UnitGaussianNormalizer
         # same ndim for x and y
         self.T = T
+        self.ensemble = ensemble
         
     def __len__(
         self
@@ -275,30 +363,33 @@ class ShearLayerDataset(Dataset):
         index,
     ):
         if self.which=='train':
-            if self.res == 64:
-                assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
-            if self.res == 128:
-                assert index < 30_000, f'Requesting index {index} for training but only 40_000 are available.'
+            assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
         
         if self.which=='test':
             assert index < 10_000, f'Requesting index {index} for testing but only 10_000 are available.'
         
+        # Debug print 
+        #print(f'Index: {index}')
+        
         ds = xr.open_zarr(
             self.file_data,
             consolidated=True,
-        ).sel(member=index)
+        ).sel(member_macro=index).sel(member_micro=0)
+        
+        # Debug print 
+        #print(ds)
         
         inputs = np.stack(
             [
-                ds['u'].isel(t=0).to_numpy(),
-                ds['v'].isel(t=0).to_numpy(),
+                ds['u'].isel(time=0).to_numpy(),
+                ds['v'].isel(time=0).to_numpy(),
             ],
             axis=0,
         )
         labels = np.stack(
             [
-                ds['u'].isel(t=self.T).to_numpy(),
-                ds['v'].isel(t=self.T).to_numpy(),
+                ds['u'].isel(time=self.T).to_numpy(),
+                ds['v'].isel(time=self.T).to_numpy(),
             ],
             axis=0,
         )
