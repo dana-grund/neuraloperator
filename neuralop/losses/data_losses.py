@@ -422,3 +422,58 @@ class WeightedL2DragLoss(object):
         loss = (1.0/len(self.mappings) + 1)*loss
 
         return loss
+    
+
+class MedianAbsoluteLoss(object):
+    def __init__(self, d=1, reduce_dims=0, reductions='sum'):
+        super().__init__()
+
+        self.d = d
+
+        if isinstance(reduce_dims, int):
+            self.reduce_dims = [reduce_dims]
+        else:
+            self.reduce_dims = reduce_dims
+        
+        if self.reduce_dims is not None:
+            if isinstance(reductions, str):
+                assert reductions == 'sum' or reductions == 'mean'
+                self.reductions = [reductions]*len(self.reduce_dims)
+            else:
+                for j in range(len(reductions)):
+                    assert reductions[j] == 'sum' or reductions[j] == 'mean'
+                self.reductions = reductions
+
+    def reduce_all(self, x):
+        for j in range(len(self.reduce_dims)):
+            if self.reductions[j] == 'sum':
+                x = torch.sum(x, dim=self.reduce_dims[j], keepdim=True)
+            else:
+                x = torch.mean(x, dim=self.reduce_dims[j], keepdim=True)
+        
+        return x
+
+    def abs(self, x, y, h=None):
+        
+        diff = torch.median(torch.abs(torch.flatten(x, start_dim=-self.d) - torch.flatten(y, start_dim=-self.d)), dim=-1).values
+
+        if self.reduce_dims is not None:
+            diff = self.reduce_all(diff).squeeze()
+            
+        return diff
+    
+    def rel(self, x, y):
+
+        diff = torch.median(torch.abs(torch.flatten(x, start_dim=-self.d) - torch.flatten(y, start_dim=-self.d)), dim=-1).values
+        ynorm = torch.median(torch.abs(torch.flatten(y, start_dim=-self.d)), dim=-1).values
+
+        diff = diff/ynorm
+
+        if self.reduce_dims is not None:
+            diff = self.reduce_all(diff).squeeze()
+            
+        return diff
+
+    def __call__(self, y_pred, y, **kwargs):
+        # Lp loss flattens over all channels
+        return self.rel(y_pred, y)
