@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from tabulate import tabulate
+import math
 #import xskillscore as xs
 
 import torch
@@ -199,12 +200,13 @@ def plot_shear_flow_test(
         
         data = test_db[index]
         data = data_processor.preprocess(data, batched=False)
-
+            
         x = data['x'].unsqueeze(0)
         out = model(x)                  # input u and v
 
         x = data['x'][0,:,:]            # plot u component only
         y = data['y'].squeeze()[0,:,:]  # plot u component only
+        print(x.shape)
         
         # Bring x and y back to cpu memory for the plotting
         x = x.to(device="cpu")
@@ -340,12 +342,20 @@ class ShearLayerDataset(Dataset):
             
         """Fixed split into train and test datasets"""
         self.length = n
-        if which == "training": # 40,000 samples for both 64 and 128 resolution
-            self.start = 0
-        elif which == "test": # 10,000 samples for both
-            self.start = 40,000
+        if ensemble:
+            if which == "training":
+                self.start = 1000
+            elif which == "test":
+                self.start = 0
+            else:
+                print("Flag 'which' of ShearLayerDataset undefined.")
         else:
-            print("Flag 'which' of ShearLayerDataset undefined.")
+            if which == "training": # 40,000 samples for both 64 and 128 resolution
+                self.start = 0
+            elif which == "test": # 10,000 samples for both
+                self.start = 40000
+            else:
+                print("Flag 'which' of ShearLayerDataset undefined.")
 
         self.which = which
         self.ndim = 4 # (batch_size, channels, res, res), see UnitGaussianNormalizer
@@ -362,19 +372,35 @@ class ShearLayerDataset(Dataset):
         self,
         index,
     ):
-        if self.which=='train':
-            assert index < 40_000, f'Requesting index {index} for training but only 40_000 are available.'
+        print(type(index), index)
+        print(type(self.start), self.start)
+        assert index >= 0, 'Only positive indexing'
+        if self.ensemble:
+            if self.which=='train':
+                assert False, f'Macro-Micro currently not available for training.'
+            if self.whic=='test':
+                assert index < 1000, f'Requesting index {index} for testing but only 1000 are available.'
+        else:
+            if self.which=='train':
+                assert index < 40000, f'Requesting index {index} for training but only 40_000 are available.'
         
-        if self.which=='test':
-            assert index < 10_000, f'Requesting index {index} for testing but only 10_000 are available.'
+            if self.which=='test':
+                assert index < 10000, f'Requesting index {index} for testing but only 10_000 are available.'
         
         # Debug print 
         #print(f'Index: {index}')
         
+        macro = self.start + index
+        micro = 0
+        if self.ensemble:
+            # Different indexation for ensemble dataset. 100 micros per macro
+            macro = math.floor(index/100)
+            micro = index % 100
+        
         ds = xr.open_zarr(
             self.file_data,
             consolidated=True,
-        ).sel(member_macro=index).sel(member_micro=0)
+        ).sel(member_macro=macro).sel(member_micro=micro)
         
         # Debug print 
         #print(ds)
