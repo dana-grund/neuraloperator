@@ -372,8 +372,6 @@ class ShearLayerDataset(Dataset):
         self,
         index,
     ):
-        print(type(index), index)
-        print(type(self.start), self.start)
         assert index >= 0, 'Only positive indexing'
         if self.ensemble:
             if self.which=='train':
@@ -387,9 +385,6 @@ class ShearLayerDataset(Dataset):
             if self.which=='test':
                 assert index < 10000, f'Requesting index {index} for testing but only 10_000 are available.'
         
-        # Debug print 
-        #print(f'Index: {index}')
-        
         macro = self.start + index
         micro = 0
         if self.ensemble:
@@ -401,9 +396,6 @@ class ShearLayerDataset(Dataset):
             self.file_data,
             consolidated=True,
         ).sel(member_macro=macro).sel(member_micro=micro)
-        
-        # Debug print 
-        #print(ds)
         
         inputs = np.stack(
             [
