@@ -81,7 +81,6 @@ def load_shear_flow(
         channel_dim,
         which='training',
         T=T,
-        ensemble=ensemble
     )
         
     train_loader = torch.utils.data.DataLoader(
@@ -206,7 +205,7 @@ def plot_shear_flow_test(
 
         x = data['x'][0,:,:]            # plot u component only
         y = data['y'].squeeze()[0,:,:]  # plot u component only
-        print(x.shape)
+        #print(x.shape)
         
         # Bring x and y back to cpu memory for the plotting
         x = x.to(device="cpu")
@@ -284,14 +283,14 @@ def compute_deterministic_scores(
 def print_scores(
     scores_abs,
     scores_rel,
-    probScores,
-    reductions
+    reductions,
+    probScores=None,
 ):
     """
     Prints rel, abs and probabilistic scores.
     Input are dictionaries.
     """
-    print(f"Deterministic Scores (reductions: {reductions}):")
+    print(f"\nDeterministic Scores (reductions: {reductions}):")
     det_row1 = list(scores_abs.keys())
     det_row1.insert(0, '-')
     det_row2 = list(scores_abs.values())
@@ -301,11 +300,12 @@ def print_scores(
     det_table = [det_row1, det_row2, det_row3]
     print(tabulate(det_table, headers='firstrow', tablefmt='fancy_grid'))
     
-    print("\nProbabilistic Scores:")
-    prob_row1 = list(probScores.keys())
-    prob_row2 = list(probScores.values())
-    prob_table = [prob_row1, prob_row2]
-    print(tabulate(prob_table, headers='firstrow', tablefmt='fancy_grid'))
+    if probScores is not None:
+        print("\nProbabilistic Scores:")
+        prob_row1 = list(probScores.keys())
+        prob_row2 = list(probScores.values())
+        prob_table = [prob_row1, prob_row2]
+        print(tabulate(prob_table, headers='firstrow', tablefmt='fancy_grid'))
     
 
 #------------------------------------------------------------------------------
@@ -321,7 +321,7 @@ class ShearLayerDataset(Dataset):
         channel_dim,
         which, # train, test
         T, # 1,2,3,4
-        ensemble
+        ensemble=False
     ):
         """Data location"""
         p = '/cluster/work/climate/webesimo'
@@ -344,7 +344,7 @@ class ShearLayerDataset(Dataset):
         self.length = n
         if ensemble:
             if which == "training":
-                self.start = 1000
+                assert False, f'Ensemble data currently not available for training' #self.start = 1000
             elif which == "test":
                 self.start = 0
             else:
@@ -376,7 +376,7 @@ class ShearLayerDataset(Dataset):
         if self.ensemble:
             if self.which=='train':
                 assert False, f'Macro-Micro currently not available for training.'
-            if self.whic=='test':
+            if self.which=='test':
                 assert index < 1000, f'Requesting index {index} for testing but only 1000 are available.'
         else:
             if self.which=='train':
@@ -426,3 +426,58 @@ class ShearLayerDataset(Dataset):
             'x':inputs,
             'y':labels,
         }
+    
+    
+    def get_ensemble(
+        self,
+        index
+    ):
+        assert self.ensemble, f'This function can only be called if data set has ensembles.'
+        
+        if self.ensemble:
+            if self.which=='train':
+                assert False, f'Macro-Micro currently not available for training.'
+            if self.which=='test':
+                assert index < 10, f'Requesting ensemble number {index} but only 10 ensembles are available.'
+                
+        ds = xr.open_zarr(
+            self.file_data,
+            consolidated=True,
+        ).sel(member_macro=index)
+        
+        return ds
+
+    
+    def ensembleInParts(
+        self,
+        ensemble,
+    ):
+        """
+        Returns lables and inputs of all ensemble members <-> returns each members data at time step T and time step 0
+        """
+        
+        inputs = np.stack(
+            [
+                ensemble['u'].isel(time=0).to_numpy(),
+                ensemble['v'].isel(time=0).to_numpy(),
+            ],
+            axis=0,
+        )
+        
+        labels = np.stack(
+            [
+                ensemble['u'].isel(time=self.T).to_numpy(),
+                ensemble['v'].isel(time=self.T).to_numpy(),
+            ],
+            axis=0,
+        )
+    
+        inputs = torch.from_numpy(
+            inputs
+        ).type(torch.float32)
+    
+        labels = torch.from_numpy(
+            labels
+        ).type(torch.float32)
+        
+        return inputs, labels
