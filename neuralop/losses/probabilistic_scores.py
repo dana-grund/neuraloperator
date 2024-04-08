@@ -6,8 +6,13 @@ import torch
 import torch.nn as nn
 import xarray as xr
 import xskillscore as xs
+import scoringrules as sr
+import numpy as np
 
 class gaussian_crps(object):
+    """
+    Class for computing gaussian crps. Takes average over ground truth ensemble.
+    """
     def __init__(self, member_dim=0, reduce_dims=None):
         super().__init__()
         
@@ -26,21 +31,21 @@ class gaussian_crps(object):
             self.reduce_dims = None
     
     def eval(self, x, y):
+        """
+        X and Y both need to be ensembles.
+        """
         x_array = xr.DataArray(x.detach())
-        
-        # Debug print
-        print(x_array.shape)
+        y_array = xr.DataArray(y.detach())
         
         # Get average and variance over the members of x
         mu = x_array.mean(f'dim_{self.member_dim}')
         sigma = x_array.std(f'dim_{self.member_dim}')
         
-        # Make sure y array has correct coordinate labels
-        y_array = xr.full_like(mu,0)
-        y_array.data = y
+        # Average over Ys ensemble members
+        y_avgs = y_array.mean(f'dim_{self.member_dim}')
         
         # Compute crps with mean over the given dimensions
-        crps = xs.crps_gaussian(y_array, mu, sigma, self.reduce_dims)
+        crps = xs.crps_gaussian(y_avgs, mu, sigma, self.reduce_dims)
         
         return crps
     
@@ -63,6 +68,7 @@ class cross_entropy(object):
         crs = self.loss(x_un, y_un)
         
         return crs
+    
 
     
 def compute_probabilistic_scores(
@@ -74,27 +80,98 @@ def compute_probabilistic_scores(
 ):
     """
     Compute scores based on a dictionary of losses ('losses').
-    Outputs two dictionaries with the abs and rel scores of all the losses.
+    Outputs two dictionaries with the scores of all the losses.
     """  
     scores = {}
     for loss_name in losses:
         #print(f'{loss_name}, {losses[loss_name]}')
         scores[loss_name] = 0.0
     
-    # Compute score for all losses, averaged over all test samples
-    n = test_db.__len__()
-    for sample_index in range(n):
-        data = test_db[sample_index]
-        data = data_processor.preprocess(data, batched=False)
-        y = data['y'].squeeze()
-        out = model(data['x'].unsqueeze(0))
-        # Make sure data is on cpu
-        y = y.to(device='cpu')
-        out = out.to(device='cpu')
-        if deterministic is True:
-            out.unsqueeze(0)
+    # Compute score for all losses, averaged over all ensembles # Ensemble wise approach
+    #for index in range(10):
+    #    ensemble = test_db.get_ensemble(index)
         
-        for loss_name in losses:
-            scores[loss_name] += (1./n)*(losses[loss_name].eval(out, y)).item()
+        # Get truth and inputs
+    #    inputs, truth = test_db.ensembleInParts(ensemble)
+        
+        # Predict
+    #    predictions = evaluate_ensemble(model, inputs)
+        
+        #data = data_processor.preprocess(data, batched=False)
+        #y = data['y'].squeeze()
+        #out = model(data['x'].unsqueeze(0))
+        # Make sure data is on cpu
+        #y = y.to(device='cpu')
+        #out = out.to(device='cpu')
+        #if deterministic is True:
+        #    out.unsqueeze(0)
+        
+    #    for loss_name in losses:
+            # Average over all ensembles
+    #        scores[loss_name] += (1./n)*(losses[loss_name].eval(predictions, truth)).item()
+    
+    # "Normla approach"
+    hacky_crps_average = 0.0
+    for ens_idx in range(10):
+        
+        ensemble_x = torch.empty((100,2,128,128))
+        ensemble_y = torch.empty((100,2,128,128))
+        
+        for sample_idx in range(100):
+            data = test_db[ens_idx*100 + sample_idx]
+            data = data_processor.preprocess(data, batched=False)
+            #y = data['y'].squeeze()
+            #out = model(data['x'].unsqueeze(0))
+            # Make sure data is on cpu
+            #y = y.to(device='cpu')
+            #out = out.to(device='cpu')
+            ensemble_x[sample_idx,:,:,:] = model(data['x'].unsqueeze(0)).to(device='cpu')
+            ensemble_y[sample_idx,:,:,:] = data['y'].squeeze().to(device='cpu')
             
+        NO_crps, Num_crps = hacky_crps(ensemble_x, ensemble_y)
+        hacky_crps_average += (1./10)*(Num_crps - NO_crps)
+            
+        for loss_name in losses:
+            scores[loss_name] += (1./10)*(losses[loss_name].eval(ensemble_x, ensemble_y)).item()
+            
+    print(f"\nHacky crps average: {abs(hacky_crps_average)}")
     return scores
+
+def evaluate_ensemble(
+    model,
+    inputs,
+):
+    """
+    Takes ensemble of input values and returns predicitons for all micro members.
+    Arguments:
+        model: the model to evaluate the data with
+        inputs: array of ensemble at timestep 0
+    Retuerns:
+        predictions: tensor of shape=(100, 2, 128, 128)
+    """
+    predictions = np.empty((100, 2, 128, 128))
+    # Loop over all members
+    for i in range(100):
+        predictions[i,:,:,:] = model(inputs[i,:,:,:])
+    
+    
+def hacky_crps(
+    ensemble_x,
+    ensemble_y
+):
+    """
+    """
+    NO_crps = 0.0
+    Num_crps = 0.0
+    
+    x_mu = torch.mean(ensemble_x, 0).detach()
+    y_mu = torch.mean(ensemble_y, 0).detach()
+    
+    x_sigma = torch.std(ensemble_x, dim=0).detach()
+    y_sigma = torch.std(ensemble_y, dim=0).detach()
+    
+    for i in range(100):
+        NO_crps += (1./100.)*np.mean(sr.crps_normal(x_mu, x_sigma, ensemble_y[i,:,:,:].detach()))
+        Num_crps += (1./100.)*np.mean(sr.crps_normal(y_mu, y_sigma, ensemble_y[i,:,:,:].detach()))
+        
+    return NO_crps, Num_crps
