@@ -51,10 +51,10 @@ zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N64.zarr")
 # %%
 # Load the Navier--Stokes dataset
 train_loader, test_loaders, data_processor = load_shear_flow(
-        n_train=10,             # 40_000
+        n_train=40000,             # 40_000
         batch_size=32, 
         train_resolution=res,
-        test_resolutions=[64],  # [64,128], 
+        test_resolutions=[128],  # [64,128], 
         n_tests=[10],           # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True,
@@ -121,7 +121,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=2, # 20
+trainer = Trainer(model=model, n_epochs=4, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -145,7 +145,7 @@ end = time.time()
 print(f'Training took {end-start} s.')
 
 # Test 
-test_db = test_loaders[64].dataset
+test_db = test_loaders[128].dataset
 model = TFNO.from_checkpoint(save_folder=folder, save_name='example_fno_shear')
 model.to(device)
 absScores, relScores = compute_deterministic_scores(
@@ -155,14 +155,18 @@ absScores, relScores = compute_deterministic_scores(
     eval_losses
 )
 
-probScores = compute_probabilistic_scores(
-    test_db,
-    model,
-    data_processor,
-    probab_scores
-)
+if ensemble:
+    probScores = compute_probabilistic_scores(
+        test_db,
+        model,
+        data_processor,
+        probab_scores
+    )
 
-print_scores(absScores, relScores, probScores, reductions)
+    print_scores(absScores, relScores, reductions, probScores)
+
+else:
+    print_scores(absScores, relScores, reductions)
 
 
 
@@ -176,6 +180,6 @@ plot_shear_flow_test(
     data_processor,
     n_plot=5,
     save_file=os.path.join(
-        folder,'fig-example_shear_n_train=10_n_epochs=2_gpu.png'
+        folder,'fig-example_shear_n_train=40000_n_epochs=4_gpu.png'
     ),
 )
