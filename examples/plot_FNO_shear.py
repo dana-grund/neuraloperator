@@ -19,7 +19,7 @@ from neuralop.models import TFNO
 from neuralop import Trainer
 from neuralop.datasets import load_shear_flow, plot_shear_flow_test, compute_deterministic_scores, print_scores
 from neuralop.utils import count_model_params
-from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores, cross_entropy
+from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores
 
 parser = argparse.ArgumentParser(description='Train FNO for 2D shear')
 parser.add_argument('--ensemble', action=argparse.BooleanOptionalAction, default=False, required=False,
@@ -50,15 +50,14 @@ zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N64.zarr")
 
 # %%
 # Load the Navier--Stokes dataset
-train_loader, test_loaders, data_processor = load_shear_flow(
-        n_train=40000,             # 40_000
+train_loader, test_loaders, ensemble_loader, data_processor = load_shear_flow(
+        n_train=10,             # 40_000
         batch_size=32, 
         train_resolution=res,
         test_resolutions=[128],  # [64,128], 
         n_tests=[10],           # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True,
-        ensemble=ensemble
 )
 data_processor = data_processor.to(device)
 
@@ -121,7 +120,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=4, # 20
+trainer = Trainer(model=model, n_epochs=2, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -146,6 +145,7 @@ print(f'Training took {end-start} s.')
 
 # Test 
 test_db = test_loaders[128].dataset
+ensemble_db = ensemble_loader.dataset
 model = TFNO.from_checkpoint(save_folder=folder, save_name='example_fno_shear')
 model.to(device)
 absScores, relScores = compute_deterministic_scores(
@@ -157,7 +157,7 @@ absScores, relScores = compute_deterministic_scores(
 
 if ensemble:
     probScores = compute_probabilistic_scores(
-        test_db,
+        ensemble_db,
         model,
         data_processor,
         probab_scores
@@ -180,6 +180,6 @@ plot_shear_flow_test(
     data_processor,
     n_plot=5,
     save_file=os.path.join(
-        folder,'fig-example_shear_n_train=40000_n_epochs=4_gpu.png'
+        folder,'fig-example_shear_n_train=10_n_epochs=2.png'
     ),
 )

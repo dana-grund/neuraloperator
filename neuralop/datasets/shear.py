@@ -28,8 +28,7 @@ def load_shear_flow(
     encode_output=True,
     encoding="channel-wise",
     channel_dim=2,
-    T=20,
-    ensemble=True
+    T=20
 ):
     """Loads the 2D shear layer dataset
 
@@ -107,7 +106,6 @@ def load_shear_flow(
             channel_dim,
             which='test',
             T=T,
-            ensemble=ensemble
         )
 
         test_loader = torch.utils.data.DataLoader(
@@ -119,6 +117,29 @@ def load_shear_flow(
             persistent_workers=False,
         )
         test_loaders[res] = test_loader 
+        
+    """Load ensemble data"""
+    print(
+        f"Loading training data at resolution {train_resolution} with {n_train} samples "
+        f"and batch-size={batch_size}"
+    )
+    ensemble_db = ShearLayerDataset(
+        128,
+        n_train,
+        channel_dim,
+        which='test',
+        T=T,
+    )
+    
+    ensemble_loader = torch.utils.data.DataLoader(
+        ensemble_db,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+        persistent_workers=False,
+    )
+
 
     """Input encoder"""
     if encode_input:
@@ -180,7 +201,7 @@ def load_shear_flow(
         positional_encoding=pos_encoding
     )
     
-    return train_loader, test_loaders, data_processor
+    return train_loader, test_loaders, ensemble_loader, data_processor
 
 def plot_shear_flow_test(
     test_db,
