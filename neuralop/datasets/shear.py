@@ -129,6 +129,7 @@ def load_shear_flow(
         channel_dim,
         which='test',
         T=T,
+        ensemble=True
     )
     
     ensemble_loader = torch.utils.data.DataLoader(
