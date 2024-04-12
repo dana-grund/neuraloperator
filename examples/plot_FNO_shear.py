@@ -163,10 +163,10 @@ if ensemble:
         probab_scores
     )
 
-    print_scores(absScores, relScores, reductions, probScores)
+    print_scores(scores_abs=absScores, scores_rel=relScores, reductions=reductions, probScores=probScores)
 
 else:
-    print_scores(absScores, relScores, reductions)
+    print_scores(scores_abs=absScores, scores_rel=relScores, reductions=reductions)
 
 
 

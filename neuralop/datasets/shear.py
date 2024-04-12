@@ -303,24 +303,25 @@ def compute_deterministic_scores(
     return scores_abs, scores_rel
 
 def print_scores(
-    scores_abs,
-    scores_rel,
-    reductions,
+    scores_abs=None,
+    scores_rel=None,
+    reductions=None,
     probScores=None,
 ):
     """
     Prints rel, abs and probabilistic scores.
     Input are dictionaries.
     """
-    print(f"\nDeterministic Scores (reductions: {reductions}):")
-    det_row1 = list(scores_abs.keys())
-    det_row1.insert(0, '-')
-    det_row2 = list(scores_abs.values())
-    det_row2.insert(0, "Absolute")
-    det_row3 = list(scores_rel.values())
-    det_row3.insert(0, "Relative")
-    det_table = [det_row1, det_row2, det_row3]
-    print(tabulate(det_table, headers='firstrow', tablefmt='fancy_grid'))
+    if scores_abs is not None and scores_rel is not None:
+        print(f"\nDeterministic Scores (reductions: {reductions}):")
+        det_row1 = list(scores_abs.keys())
+        det_row1.insert(0, '-')
+        det_row2 = list(scores_abs.values())
+        det_row2.insert(0, "Absolute")
+        det_row3 = list(scores_rel.values())
+        det_row3.insert(0, "Relative")
+        det_table = [det_row1, det_row2, det_row3]
+        print(tabulate(det_table, headers='firstrow', tablefmt='fancy_grid'))
     
     if probScores is not None:
         print("\nProbabilistic Scores:")
