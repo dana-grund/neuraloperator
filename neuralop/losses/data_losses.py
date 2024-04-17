@@ -142,7 +142,18 @@ class LpLoss(object):
 
     def __call__(self, y_pred, y, **kwargs):
         # Lp loss flattens over all channels
-        return self.rel(y_pred, y)
+        if len(y.shape) == 4:
+            # Reduce one more dimension if data is batched
+            loss = self.rel(y_pred, y)
+            if self.reductions[0] == 'sum':
+                loss = torch.sum(loss, dim=0, keepdim=True)
+            else:
+                loss = torch.mean(loss, dim=0, keepdim=True)
+                
+            return loss.squeeze()
+        
+        else:
+            return self.rel(y_pred, y)
 
 
 class H1Loss(object):
@@ -283,17 +294,26 @@ class H1Loss(object):
         return diff
 
     def call_by_channel(self, c, y_pred, y, h=None, **kwargs):
-        y_pred_ = torch.unsqueeze(y_pred[:,c,:,:],1)
-        y_      = torch.unsqueeze(y[:,c,:,:],1)
+        if len(y_pred.shape) == 4:
+            y_pred_ = torch.unsqueeze(y_pred[:,c,:,:],1)
+            y_      = torch.unsqueeze(y[:,c,:,:],1)
+        else:
+            y_pred_ = torch.unsqueeze(y_pred[c,:,:],1)
+            y_      = torch.unsqueeze(y[c,:,:],1)
         
         return self.rel(y_pred_, y_, h=h)
         
     def __call__(self, y_pred, y, h=None, **kwargs):
         # H1 loss should treat channels separately to compute the gradient
         loss = self.call_by_channel(0, y_pred, y, h=h)
-        n_channels = y_pred.shape[1]
-        for c in range(1,n_channels):
-            loss += self.call_by_channel(c, y_pred, y, h=h)
+        if len(y_pred.shape) == 4:
+            n_channels = y_pred.shape[1]
+            for c in range(1,n_channels):
+                loss += self.call_by_channel(c, y_pred, y, h=h)
+        else:
+            n_channels = y_pred.shape[0]
+            for c in range(1,n_channels):
+                loss += self.call_by_channel(c, y_pred, y, h=h)
         return loss
 
 
@@ -476,4 +496,15 @@ class MedianAbsoluteLoss(object):
 
     def __call__(self, y_pred, y, **kwargs):
         # Lp loss flattens over all channels
-        return self.rel(y_pred, y)
+        if len(y.shape) == 4:
+            # Reduce one more dimension if data is batched
+            loss = self.rel(y_pred, y)
+            if self.reductions[0] == 'sum':
+                loss = torch.sum(loss, dim=0, keepdim=True)
+            else:
+                loss = torch.mean(loss, dim=0, keepdim=True)
+                
+            return loss.squeeze()
+        
+        else:
+            return self.rel(y_pred, y)
