@@ -17,9 +17,9 @@ import zarr
 
 from neuralop.models import TFNO
 from neuralop import Trainer
-from neuralop.datasets import load_shear_flow, plot_shear_flow_test, compute_deterministic_scores, print_scores
+from neuralop.datasets import load_shear_flow, plot_shear_flow_test
 from neuralop.utils import count_model_params
-from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores
+from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores, compute_deterministic_scores, print_scores, hacky_crps
 
 parser = argparse.ArgumentParser(description='Train FNO for 2D shear')
 parser.add_argument('--ensemble', action=argparse.BooleanOptionalAction, default=False, required=False,
@@ -102,9 +102,10 @@ eval_losses = {'l2': l2loss, 'h1': h1loss, 'l1': l1loss, 'median absolute': medi
 
 # Probabilistic score metrics
 crps = gaussian_crps(member_dim=0, reduce_dims=None)
+hackCrps = hacky_crps(member_dim=0, reduce_dims=None)
 #crossEntropy = cross_entropy(member_dim=0)
 
-probab_scores = {'crps': crps}
+probab_scores = {'averaged_crps': crps, 'hacky_crps': hackCrps}
 
 
 # %%
@@ -120,11 +121,11 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=2, # 20
+trainer = Trainer(model=model, n_epochs=5, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
-                  log_test_interval=3,
+                  log_test_interval=1,
                   use_distributed=False,
                   verbose=True)
 
@@ -137,8 +138,11 @@ trainer.train(train_loader=train_loader,
               optimizer=optimizer,
               scheduler=scheduler, 
               regularizer=False, 
+              ensemble_loader=ensemble_loader,
               training_loss=train_loss,
-              eval_losses=eval_losses)
+              eval_losses=eval_losses,
+              prob_losses=probab_scores,
+              loss_reductions=reductions)
 model.save_checkpoint(save_folder=folder, save_name='example_fno_shear')
 end = time.time()
 print(f'Training took {end-start} s.')
@@ -180,6 +184,6 @@ plot_shear_flow_test(
     data_processor,
     n_plot=5,
     save_file=os.path.join(
-        folder,'fig-example_shear_n_train=10_n_epochs=2.png'
+        folder,'fig-example_shear_n_train=10_n_epochs=5.png'
     ),
 )
