@@ -31,7 +31,7 @@ def compute_deterministic_scores(
         
         for loss_name in losses:
             scores_abs[loss_name] += (1./n)*(losses[loss_name].abs(out, y)).item()
-            scores_rel[loss_name] += (1./n)*(losses[loss_name].rel(out, y)).item()
+            scores_rel[loss_name] += (1./n)*(losses[loss_name](out, y)).item()
             
     return scores_abs, scores_rel
 
@@ -43,7 +43,8 @@ def print_scores(
 ):
     """
     Prints rel, abs and probabilistic scores.
-    Input are dictionaries.
+    Input are dictionaries, except for'reductions', which can be a string or list/tuple of strings.
+    Only prints dictionaries which are not None.
     """
     if scores_abs is not None or scores_rel is not None:
         if reductions is not None:
