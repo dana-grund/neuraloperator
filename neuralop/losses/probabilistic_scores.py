@@ -69,6 +69,51 @@ class cross_entropy(object):
         
         return crs
     
+class hacky_crps(object):
+    """
+    Class for computing hacky workaround of gaussian crps.
+    """
+    def __init__(self, member_dim=0, reduce_dims=None):
+        super().__init__()
+        
+        self.member_dim = member_dim
+
+        if isinstance(reduce_dims, list):
+            self.reduce_dims = tuple(reduce_dims)
+        else:
+            self.reduce_dims = reduce_dims
+            
+    def eval(self, ensemble_x, ensemble_y):
+        """
+        X and Y both need to be ensembles.
+        """
+        NO_crps = 0.0
+        Num_crps = 0.0
+        
+        x_mu = torch.mean(ensemble_x, self.member_dim).detach()
+        y_mu = torch.mean(ensemble_y, self.member_dim).detach()
+        
+        x_sigma = torch.std(ensemble_x, dim=self.member_dim).detach()
+        y_sigma = torch.std(ensemble_y, dim=self.member_dim).detach()
+        
+        if self.member_dim == 0:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_normal(x_mu, x_sigma, ensemble_y[i,:,:,:].detach()), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_normal(y_mu, y_sigma, ensemble_y[i,:,:,:].detach()), self.reduce_dims)
+        elif self.member_dim == 1:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_normal(x_mu, x_sigma, ensemble_y[:,i,:,:].detach()), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_normal(y_mu, y_sigma, ensemble_y[:,i,:,:].detach()), self.reduce_dims)
+        elif self.member_dim == 2:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_normal(x_mu, x_sigma, ensemble_y[:,:,i,:].detach()), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_normal(y_mu, y_sigma, ensemble_y[:,:,i,:].detach()), self.reduce_dims)
+        else:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_normal(x_mu, x_sigma, ensemble_y[:,:,:,i].detach()), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_normal(y_mu, y_sigma, ensemble_y[:,:,:,i].detach()), self.reduce_dims)
+        
+        return abs(NO_crps - Num_crps)
 
     
 def compute_probabilistic_scores(
@@ -128,7 +173,7 @@ def compute_probabilistic_scores(
             ensemble_x[sample_idx,:,:,:] = model(data['x'].unsqueeze(0)).to(device='cpu')
             ensemble_y[sample_idx,:,:,:] = data['y'].squeeze().to(device='cpu')
             
-        NO_crps, Num_crps = hacky_crps(ensemble_x, ensemble_y)
+        NO_crps, Num_crps = hacky_crps_comp(ensemble_x, ensemble_y)
         hacky_crps_average += (1./10)*(Num_crps - NO_crps)
             
         for loss_name in losses:
@@ -155,7 +200,7 @@ def evaluate_ensemble(
         predictions[i,:,:,:] = model(inputs[i,:,:,:])
     
     
-def hacky_crps(
+def hacky_crps_comp(
     ensemble_x,
     ensemble_y
 ):
