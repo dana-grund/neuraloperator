@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from .callbacks import PipelineCallback
 import neuralop.mpu.comm as comm
-from neuralop.losses import LpLoss
+from neuralop.losses import LpLoss, print_scores
 
 
 class Trainer:
@@ -94,7 +94,7 @@ class Trainer:
         
     def train(self, train_loader, test_loaders,
             optimizer, scheduler, regularizer,
-              training_loss=None, eval_losses=None):
+              ensemble_loader=None, training_loss=None, eval_losses=None, prob_losses=None, loss_reductions=None):
         
         """Trains the given model on the given datasets.
         params:
@@ -102,6 +102,8 @@ class Trainer:
             training dataloader
         test_loaders: dict[torch.utils.data.DataLoader]
             testing dataloaders
+        ensemble_loader: torch.utils.data.DataLoader
+            ensemble data loader (for additional testing)
         optimizer: torch.optim.Optimizer
             optimizer to use during training
         optimizer: torch.optim.lr_scheduler
@@ -110,6 +112,8 @@ class Trainer:
             cost function to minimize
         eval_losses: dict[Loss]
             dict of losses to use in self.eval()
+        loss_reductions: list[reductions]
+            list of reductions used in (evaluation) loss computations
         """
 
         if self.callbacks:
@@ -124,7 +128,8 @@ class Trainer:
         if eval_losses is None: # By default just evaluate on the training loss
             eval_losses = dict(l2=training_loss)
 
-        errors = None
+        errors_det = [None] * self.n_epochs
+        errors_prob = [None] * self.n_epochs
 
         for epoch in tqdm(range(self.n_epochs)):
             
@@ -220,9 +225,13 @@ class Trainer:
                     self.callbacks.on_before_val(epoch=epoch, train_err=train_err, time=epoch_train_time, \
                                            avg_loss=avg_loss, avg_lasso_loss=avg_lasso_loss)
                 
-
                 for loader_name, loader in test_loaders.items():
-                    errors = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+                    errors_det[epoch] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+                
+                if ensemble_loader is not None and prob_losses is not None:
+                    errors_prob[epoch] = self.eval_prob(prob_losses, ensemble_loader.dataset)
+                
+                print_scores(scores_rel=errors_det[epoch], reductions=loss_reductions, probScores=errors_prob[epoch])
 
                 if self.callbacks:
                     self.callbacks.on_val_end()
@@ -230,7 +239,7 @@ class Trainer:
             if self.callbacks:
                 self.callbacks.on_epoch_end(epoch=epoch, train_err=train_err, avg_loss=avg_loss)
 
-        return errors
+        return errors_det, errors_prob
 
     def evaluate(self, loss_dict, data_loader,
                  log_prefix=''):
@@ -290,7 +299,7 @@ class Trainer:
                         if isinstance(out, torch.Tensor):
                             val_loss = loss(out, **sample)
                         elif isinstance(out, dict):
-                            val_loss = loss(out, **sample)
+                            val_loss = loss(**out, **sample)
                         if val_loss.shape == ():
                             val_loss = val_loss.item()
 
@@ -298,9 +307,10 @@ class Trainer:
 
                 if self.callbacks:
                     self.callbacks.on_val_batch_end()
-    
-        for key in errors.keys():
-            errors[key] /= n_samples
+        
+        # Leave this away because losses take mean over first dimension already. Might have to change if reduction is changed to sum...
+        #for key in errors.keys():
+        #    errors[key] /= n_samples
         
         if self.callbacks:
             self.callbacks.on_val_epoch_end(errors=errors, sample=sample, out=out)
@@ -308,4 +318,65 @@ class Trainer:
         del out
 
         return errors
+    
+    
+    def eval_prob(self, prob_losses, ensemble_db, log_prefix=''):
+        """Evaluates the model on probabilistic losses (the dict and hacky crps)
+        
+        Parameters
+        ----------
+        prob_losses : dict of functions 
+          each function takes as input a tuple (prediction, ground_truth),
+          both ensembles, and returns the corresponding loss
+        ensemble_db : data set to evaluate on
+        log_prefix : str, default is ''
+            if not '', used as prefix in output dictionary
+
+        Returns
+        -------
+        errors : dict
+            dict[f'{log_prefix}_{loss_name}] = loss for loss in loss_dict (and hacky crps)
+        """
+
+        self.model.eval()
+
+        errors = {f'{log_prefix}_{loss_name}':0 for loss_name in prob_losses.keys()}
+
+        n_samples = 0
+        with torch.no_grad():
+            for ens_idx in range(10):
+                
+                ensemble_x = torch.empty((100,2,128,128))
+                ensemble_y = torch.empty((100,2,128,128))
+                
+                for sample_idx in range(100):
+
+                    sample = ensemble_db[ens_idx*100 + sample_idx]
+
+                    if self.data_processor is not None:
+                        sample = self.data_processor.preprocess(sample, batched=False)
+                    else:
+                        # load data to device if no preprocessor exists
+                        sample = {k:v.to(self.device) for k,v in sample.items() if torch.is_tensor(v)}
+                    
+                    out = self.model(sample['x'].unsqueeze(0))
+    
+                    if self.data_processor is not None:
+                        out, sample = self.data_processor.postprocess(out, sample)
+                
+                    ensemble_x[sample_idx,:,:,:] = out
+                    ensemble_y[sample_idx,:,:,:] = sample['y']
+                
+                for loss_name, loss in prob_losses.items():
+                    val_loss = loss.eval(ensemble_x, ensemble_y).item()
+
+                    errors[f'{log_prefix}_{loss_name}'] += val_loss
+    
+        for key in errors.keys():
+            errors[key] /= 10.
+        
+        del out
+
+        return errors
+    
 
