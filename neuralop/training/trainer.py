@@ -130,6 +130,9 @@ class Trainer:
 
         errors_det = [None] * self.n_epochs
         errors_prob = [None] * self.n_epochs
+        
+        #errors_det = np.zeros((len(eval_losses), self.n_epochs))
+        #errors_prob = np.zeros((len(prob_losses), self.n_epochs))
 
         for epoch in tqdm(range(self.n_epochs)):
             
@@ -320,7 +323,7 @@ class Trainer:
         return errors
     
     
-    def eval_prob(self, prob_losses, ensemble_db, log_prefix=''):
+    def eval_prob(self, prob_losses, ensemble_db, log_prefix='128'):
         """Evaluates the model on probabilistic losses (the dict and hacky crps)
         
         Parameters
