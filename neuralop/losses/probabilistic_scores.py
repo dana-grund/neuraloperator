@@ -156,7 +156,6 @@ def compute_probabilistic_scores(
     #        scores[loss_name] += (1./n)*(losses[loss_name].eval(predictions, truth)).item()
     
     # "Normla approach"
-    hacky_crps_average = 0.0
     for ens_idx in range(10):
         
         ensemble_x = torch.empty((100,2,128,128))
@@ -173,13 +172,9 @@ def compute_probabilistic_scores(
             ensemble_x[sample_idx,:,:,:] = model(data['x'].unsqueeze(0)).to(device='cpu')
             ensemble_y[sample_idx,:,:,:] = data['y'].squeeze().to(device='cpu')
             
-        NO_crps, Num_crps = hacky_crps_comp(ensemble_x, ensemble_y)
-        hacky_crps_average += (1./10)*(Num_crps - NO_crps)
-            
         for loss_name in losses:
             scores[loss_name] += (1./10)*(losses[loss_name].eval(ensemble_x, ensemble_y)).item()
             
-    print(f"\nHacky crps average: {abs(hacky_crps_average)}")
     return scores
 
 def evaluate_ensemble(
