@@ -147,7 +147,6 @@ def dictToArray(
             for detScore in scores_det[epoch].values():
                 detMat[scoreIdxDet, epoch] = detScore
                 scoreIdxDet += 1
-                print(detScore)
             for probScore in scores_prob[epoch].values():
                 probMat[scoreIdxProb, epoch] = probScore
                 scoreIdxProb += 1
