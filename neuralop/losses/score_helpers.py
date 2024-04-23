@@ -86,7 +86,7 @@ def plot_scores(
 ):
     """
     """
-    if scores_det is None and scores_prob is not None:
+    if scores_det[0] is None and scores_prob[0] is not None:
         fig, axs = plt.subplots(1)
         fig.tight_layout(pad=3.0)
         fig.set_size_inches(8,7)
@@ -99,7 +99,7 @@ def plot_scores(
         axs.legend()
         axs.set_title('Probabilistic errors')
         
-    elif scores_det is not None and scores_prob is None:
+    elif scores_det[0] is not None and scores_prob[0] is None:
         fig, axs = plt.subplots(1)
         fig.tight_layout(pad=3.0)
         fig.set_size_inches(8,7)
@@ -112,7 +112,7 @@ def plot_scores(
         axs.legend()
         axs.set_title('Deterministic errors')
         
-    elif scores_det is not None and scores_prob is not None:
+    elif scores_det[0] is not None and scores_prob[0] is not None:
         fig, axs = plt.subplots(2)
         fig.tight_layout(pad=3.0)
         fig.set_size_inches(8,7)
