@@ -128,8 +128,17 @@ class Trainer:
         if eval_losses is None: # By default just evaluate on the training loss
             eval_losses = dict(l2=training_loss)
 
-        errors_det = [None] * self.n_epochs
-        errors_prob = [None] * self.n_epochs
+        errors_det = [None] * (self.n_epochs+1)
+        errors_prob = [None] * (self.n_epochs+1)
+        
+        # Evaluation on untrained model
+        for loader_name, loader in test_loaders.items():
+            errors_det[0] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+                
+        if ensemble_loader is not None and prob_losses is not None:
+            errors_prob[0] = self.eval_prob(prob_losses, ensemble_loader.dataset)
+                
+        print_scores(scores_rel=errors_det[0], reductions=loss_reductions, probScores=errors_prob[0])
 
         for epoch in tqdm(range(self.n_epochs)):
             
@@ -226,12 +235,12 @@ class Trainer:
                                            avg_loss=avg_loss, avg_lasso_loss=avg_lasso_loss)
                 
                 for loader_name, loader in test_loaders.items():
-                    errors_det[epoch] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+                    errors_det[epoch+1] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
                 
                 if ensemble_loader is not None and prob_losses is not None:
-                    errors_prob[epoch] = self.eval_prob(prob_losses, ensemble_loader.dataset)
+                    errors_prob[epoch+1] = self.eval_prob(prob_losses, ensemble_loader.dataset)
                 
-                print_scores(scores_rel=errors_det[epoch], reductions=loss_reductions, probScores=errors_prob[epoch])
+                print_scores(scores_rel=errors_det[epoch+1], reductions=loss_reductions, probScores=errors_prob[epoch+1])
 
                 if self.callbacks:
                     self.callbacks.on_val_end()
