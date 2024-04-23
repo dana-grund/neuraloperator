@@ -101,7 +101,7 @@ train_loss = h1loss
 eval_losses = {'l2': l2loss, 'h1': h1loss, 'l1': l1loss, 'median absolute': medianloss} # {'h1': h1loss, 'l2': l2loss}
 
 # Probabilistic score metrics
-probab_
+probab_scores = None
 if ensemble:
     crps = gaussian_crps(member_dim=0, reduce_dims=None)
     hackCrps = hacky_crps(member_dim=0, reduce_dims=None)
@@ -201,6 +201,6 @@ if ensemble:
         data_processor,
         n_plot=5,
         save_file=os.path.join(
-            folder,'fig-example_shear_n_train=100_n_epochs=2.png'
+            folder,'fig-example_shear_n_train=100_n_epochs=2_ensemble.png'
         ),
     )
