@@ -130,9 +130,6 @@ class Trainer:
 
         errors_det = [None] * self.n_epochs
         errors_prob = [None] * self.n_epochs
-        
-        #errors_det = np.zeros((len(eval_losses), self.n_epochs))
-        #errors_prob = np.zeros((len(prob_losses), self.n_epochs))
 
         for epoch in tqdm(range(self.n_epochs)):
             
@@ -274,7 +271,8 @@ class Trainer:
         with torch.no_grad():
             for idx, sample in enumerate(data_loader):
 
-                n_samples += sample['y'].size(0)
+                #n_samples += sample['y'].size(0)
+                n_samples += 1
                 if self.callbacks:
                     self.callbacks.on_val_batch_start(idx=idx, sample=sample)
 
@@ -311,9 +309,8 @@ class Trainer:
                 if self.callbacks:
                     self.callbacks.on_val_batch_end()
         
-        # Leave this away because losses take mean over first dimension already. Might have to change if reduction is changed to sum...
-        #for key in errors.keys():
-        #    errors[key] /= n_samples
+        for key in errors.keys():
+            errors[key] /= n_samples
         
         if self.callbacks:
             self.callbacks.on_val_epoch_end(errors=errors, sample=sample, out=out)
