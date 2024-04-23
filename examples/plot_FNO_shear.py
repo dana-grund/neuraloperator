@@ -51,11 +51,11 @@ zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N64.zarr")
 # %%
 # Load the Navier--Stokes dataset
 train_loader, test_loaders, ensemble_loader, data_processor = load_shear_flow(
-        n_train=10000,             # 40_000
+        n_train=10,             # 40_000
         batch_size=32, 
         train_resolution=res,
         test_resolutions=[128],  # [64,128], 
-        n_tests=[10000],           # [10_000, 10_000],
+        n_tests=[100],           # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True,
 )
@@ -101,11 +101,13 @@ train_loss = h1loss
 eval_losses = {'l2': l2loss, 'h1': h1loss, 'l1': l1loss, 'median absolute': medianloss} # {'h1': h1loss, 'l2': l2loss}
 
 # Probabilistic score metrics
-crps = gaussian_crps(member_dim=0, reduce_dims=None)
-hackCrps = hacky_crps(member_dim=0, reduce_dims=None)
-#crossEntropy = cross_entropy(member_dim=0)
+probab_
+if ensemble:
+    crps = gaussian_crps(member_dim=0, reduce_dims=None)
+    hackCrps = hacky_crps(member_dim=0, reduce_dims=None)
+    #crossEntropy = cross_entropy(member_dim=0)
 
-probab_scores = {'averaged_crps': crps, 'hacky_crps': hackCrps}
+    probab_scores = {'averaged_crps': crps, 'hacky_crps': hackCrps}
 
 
 # %%
@@ -121,7 +123,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=20, # 20
+trainer = Trainer(model=model, n_epochs=5, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -187,6 +189,18 @@ plot_shear_flow_test(
     data_processor,
     n_plot=5,
     save_file=os.path.join(
-        folder,'fig-example_shear_n_train=10000_n_epochs=20_gpu.png'
+        folder,'fig-example_shear_n_train=10_n_epochs=2.png'
     ),
 )
+
+if ensemble:
+    # Once again for ensemble
+    plot_shear_flow_test(
+        ensemble_db,
+        model,
+        data_processor,
+        n_plot=5,
+        save_file=os.path.join(
+            folder,'fig-example_shear_n_train=100_n_epochs=2.png'
+        ),
+    )
