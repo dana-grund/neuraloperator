@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 
 from training import training
 
+"""
+To run this script, create an EMPTY directory 'runs' at the same location as this file.
+"""
+
 for i in range(torch.cuda.device_count()):
     print(torch.cuda.get_device_properties(i).name)
     
@@ -53,7 +57,7 @@ ax.set_title('H1 errors')
 plt.savefig("combined_plots.png", bbox_inches='tight')
 plt.close(fig)
 
-bestModelDir = results.get_best_result.path()
+bestModelDir = results.get_best_result('h1', mode='min').path
 print(f'\nBest performing model is saved at {bestModelDir}')
 
 ray.shutdown()
