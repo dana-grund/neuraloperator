@@ -93,8 +93,9 @@ class Trainer:
                  verbose=verbose)
         
     def train(self, train_loader, test_loaders,
-            optimizer, scheduler, regularizer,
-              ensemble_loader=None, training_loss=None, eval_losses=None, prob_losses=None, loss_reductions=None):
+            optimizer, scheduler, regularizer, save_folder,
+              ensemble_loader=None, training_loss=None, eval_losses=None, prob_losses=None, loss_reductions=None, initial_eval=True,
+             checkpoint=True):
         
         """Trains the given model on the given datasets.
         params:
@@ -127,18 +128,27 @@ class Trainer:
 
         if eval_losses is None: # By default just evaluate on the training loss
             eval_losses = dict(l2=training_loss)
-
-        errors_det = [None] * (self.n_epochs+1)
-        errors_prob = [None] * (self.n_epochs+1)
         
-        # Evaluation on untrained model
-        for loader_name, loader in test_loaders.items():
-            errors_det[0] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
-                
-        if ensemble_loader is not None and prob_losses is not None:
-            errors_prob[0] = self.eval_prob(prob_losses, ensemble_loader.dataset)
-                
-        print_scores(scores_rel=errors_det[0], reductions=loss_reductions, probScores=errors_prob[0])
+        offset = None
+        if initial_eval:
+            errors_det = [None] * (self.n_epochs+1)
+            errors_prob = [None] * (self.n_epochs+1)
+            offset = 1
+        else:
+            errors_det = [None] * (self.n_epochs)
+            errors_prob = [None] * (self.n_epochs)
+            offset = 0
+        train_losses = []
+        
+        if initial_eval:
+            # Evaluation on untrained model
+            for loader_name, loader in test_loaders.items():
+                errors_det[0] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+
+            if ensemble_loader is not None and prob_losses is not None:
+                errors_prob[0] = self.eval_prob(prob_losses, ensemble_loader.dataset)
+
+            print_scores(scores_rel=errors_det[0], reductions=loss_reductions, probScores=errors_prob[0])
 
         for epoch in tqdm(range(self.n_epochs)):
             
@@ -212,6 +222,7 @@ class Trainer:
         
                 with torch.no_grad():
                     avg_loss += loss.item()
+                    train_losses.append(loss.item())
                     if regularizer:
                         avg_lasso_loss += regularizer.loss
 
@@ -235,20 +246,24 @@ class Trainer:
                                            avg_loss=avg_loss, avg_lasso_loss=avg_lasso_loss)
                 
                 for loader_name, loader in test_loaders.items():
-                    errors_det[epoch+1] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
+                    errors_det[epoch+offset] = self.evaluate(eval_losses, loader, log_prefix=loader_name)
                 
                 if ensemble_loader is not None and prob_losses is not None:
-                    errors_prob[epoch+1] = self.eval_prob(prob_losses, ensemble_loader.dataset)
+                    errors_prob[epoch+offset] = self.eval_prob(prob_losses, ensemble_loader.dataset)
                 
-                print_scores(scores_rel=errors_det[epoch+1], reductions=loss_reductions, probScores=errors_prob[epoch+1])
+                print_scores(scores_rel=errors_det[epoch+offset], reductions=loss_reductions, probScores=errors_prob[epoch+offset])
 
                 if self.callbacks:
                     self.callbacks.on_val_end()
+                    
+                # Checkpoint model
+                if checkpoint:
+                    self.model.save_checkpoint(save_folder=save_folder, save_name=f'fno_shear_n_train={len(train_loader.dataset)}_epoch={epoch}')
             
             if self.callbacks:
                 self.callbacks.on_epoch_end(epoch=epoch, train_err=train_err, avg_loss=avg_loss)
 
-        return errors_det, errors_prob
+        return errors_det, errors_prob, train_losses
 
     def evaluate(self, loss_dict, data_loader,
                  log_prefix=''):
