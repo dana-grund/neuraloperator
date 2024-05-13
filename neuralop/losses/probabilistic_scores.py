@@ -8,6 +8,7 @@ import xarray as xr
 import xskillscore as xs
 import scoringrules as sr
 import numpy as np
+import math
 
 class gaussian_crps(object):
     """
@@ -115,7 +116,220 @@ class hacky_crps(object):
         
         return abs(NO_crps - Num_crps)
 
+class lognormal_crps(object):
+    """
+    Class for computing lognormal crps. Follows 'hacky' approach.
+    """
+    def __init__(self, member_dim=0, reduce_dims=None):
+        super().__init__()
+        
+        self.member_dim = member_dim
+
+        if isinstance(reduce_dims, list):
+            self.reduce_dims = tuple(reduce_dims)
+        else:
+            self.reduce_dims = reduce_dims
+            
+    def eval(self, ensemble_x, ensemble_y):
+        """
+        X and Y both need to be ensembles.
+        """
+        NO_crps = 0.0
+        Num_crps = 0.0
+        
+        x_data = ensemble_x.detach().numpy().copy()
+        y_data = ensemble_y.detach().numpy().copy()
+        
+        # Mean and standard dev. for normalization
+        x_mu_old = np.mean(x_data, axis=self.member_dim)
+        x_sigma_old = np.std(x_data, axis=self.member_dim)
+        y_mu_old = np.mean(y_data, axis=self.member_dim)
+        y_sigma_old = np.std(y_data, axis=self.member_dim)
+        
+        # Normalize
+        if self.member_dim == 0:
+            for i in range(100):
+                x_data[i,:,:,:] = (x_data[i,:,:,:] - x_mu_old) / x_sigma_old
+                y_data[i,:,:,:] = (y_data[i,:,:,:] - y_mu_old) / y_sigma_old
+        elif self.member_dim == 1:
+            for i in range(100):
+                x_data[:,i,:,:] = (x_data[:,i,:,:] - x_mu_old) / x_sigma_old
+                y_data[:,i,:,:] = (y_data[:,i,:,:] - y_mu_old) / y_sigma_old
+        elif self.member_dim == 2:
+            for i in range(100):
+                x_data[:,:,i,:] = (x_data[:,:,i,:] - x_mu_old) / x_sigma_old
+                y_data[:,:,i,:] = (y_data[:,:,i,:] - y_mu_old) / y_sigma_old
+        else:
+            for i in range(100):
+                x_data[:,:,:,i] = (x_data[:,:,:,i] - x_mu_old) / x_sigma_old
+                y_data[:,:,:,i] = (y_data[:,:,:,i] - y_mu_old) / y_sigma_old
+                
+        # Min for shifting to positive
+        x_mins = np.min(x_data, axis=self.member_dim)
+        y_mins = np.min(y_data, axis=self.member_dim)
+        
+        # Shift (+ 1 to avoid dividing by zero)
+        if self.member_dim == 0:
+            for i in range(100):
+                x_data[i,:,:,:] += np.abs(x_mins) + 1.0
+                y_data[i,:,:,:] += np.abs(y_mins) + 1.0
+        elif self.member_dim == 1:
+            for i in range(100):
+                x_data[:,i,:,:] += np.abs(x_mins) + 1.0
+                y_data[:,i,:,:] += np.abs(y_mins) + 1.0
+        elif self.member_dim == 2:
+            for i in range(100):
+                x_data[:,:,i,:] += np.abs(x_mins) + 1.0
+                y_data[:,:,i,:] += np.abs(y_mins) + 1.0
+        else:
+            for i in range(100):
+                x_data[:,:,:,i] += np.abs(x_mins) + 1.0
+                y_data[:,:,:,i] += np.abs(y_mins) + 1.0
+        
+        # Compute new means and stds
+        x_mu = np.mean(x_data, axis=self.member_dim)
+        y_mu = np.mean(y_data, axis=self.member_dim)
+        x_sigma = np.std(x_data, axis=self.member_dim)
+        y_sigma = np.std(y_data, axis=self.member_dim)
+        
+        if self.member_dim == 0:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_lognormal(x_mu, x_sigma, y_data[i,:,:,:]), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_lognormal(y_mu, y_sigma, y_data[i,:,:,:]), self.reduce_dims)
+        elif self.member_dim == 1:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_lognormal(x_mu, x_sigma, y_data[:,i,:,:]), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_lognormal(y_mu, y_sigma, y_data[:,i,:,:]), self.reduce_dims)
+        elif self.member_dim == 2:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_lognormal(x_mu, x_sigma, y_data[:,:,i,:]), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_lognormal(y_mu, y_sigma, y_data[:,:,i,:]), self.reduce_dims)
+        else:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_lognormal(x_mu, x_sigma, y_data[:,:,:,i]), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_lognormal(y_mu, y_sigma, y_data[:,:,:,i]), self.reduce_dims)
+        
+        return abs(NO_crps - Num_crps)
+
+
+class ensemble_crps(object):
+    """
+    Class for computing ensemble crps. Follows 'hacky' approach
+    """
+    def __init__(self, member_dim=0, reduce_dims=None):
+        super().__init__()
+        
+        self.member_dim = member_dim
+
+        if isinstance(reduce_dims, list):
+            self.reduce_dims = tuple(reduce_dims)
+        else:
+            self.reduce_dims = reduce_dims
+            
+    def eval(self, ensemble_x, ensemble_y):
+        """
+        X and Y both need to be ensembles.
+        """
+        NO_crps = 0.0
+        Num_crps = 0.0
+        
+        if self.member_dim == 0:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_x.detach(), ensemble_y[i,:,:,:].detach(), axis=0), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_y.detach(), ensemble_y[i,:,:,:].detach(), axis=0), self.reduce_dims)
+        elif self.member_dim == 1:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_x.detach(), ensemble_y[:,i,:,:].detach(), axis=1), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_y.detach(), ensemble_y[:,i,:,:].detach(), axis=1), self.reduce_dims)
+        elif self.member_dim == 2:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_x.detach(), ensemble_y[:,:,i,:].detach(), axis=2), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_y.detach(), ensemble_y[:,:,i,:].detach(), axis=2), self.reduce_dims)
+        else:
+            for i in range(100):
+                NO_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_x.detach(), ensemble_y[:,:,:,i].detach(), axis=3), self.reduce_dims)
+                Num_crps += (1./100.)*np.mean(sr.crps_ensemble(ensemble_y.detach(), ensemble_y[:,:,:,i].detach(), axis=3), self.reduce_dims)
+        
+        return abs(NO_crps - Num_crps)
     
+
+# Maximum mean discrepancy
+class mmd(object):
+    """
+    Class for computing maximum mean discrepancy.
+    """
+    def __init__(self, kernel, member_dim=0, reduce_dims=None):
+        super().__init__()
+        
+        self.member_dim = member_dim
+
+        if isinstance(reduce_dims, list):
+            self.reduce_dims = tuple(reduce_dims)
+        else:
+            self.reduce_dims = reduce_dims
+          
+        self.kernel = kernel
+            
+    def eval(self, ensemble_x, ensemble_y):
+        """
+        X and Y both need to be ensembles.
+        """
+        xx_mean = 0.0
+        yy_mean = 0.0
+        xy_mean = 0.0
+        ensemble_size = ensemble_x.shape[self.member_dim]
+        count = 0
+        if self.member_dim == 0:
+            for i in range(ensemble_size):
+                for j in range(i, ensemble_size):
+                    xx_mean += torch.mean(self.kernel(ensemble_x[i,:,:,:], ensemble_x[j,:,:,:]), self.reduce_dims)
+                    yy_mean += torch.mean(self.kernel(ensemble_y[i,:,:,:], ensemble_y[j,:,:,:]), self.reduce_dims)
+                    xy_mean += torch.mean(self.kernel(ensemble_x[i,:,:,:], ensemble_y[j,:,:,:]), self.reduce_dims)
+                    count += 1
+        elif self.member_dim == 1:
+            for i in range(ensemble_size):
+                for j in range(i, ensemble_size):
+                    xx_mean += torch.mean(self.kernel(ensemble_x[:,i,:,:], ensemble_x[:,j,:,:]), self.reduce_dims)
+                    yy_mean += torch.mean(self.kernel(ensemble_y[:,i,:,:], ensemble_y[:,j,:,:]), self.reduce_dims)
+                    xy_mean += torch.mean(self.kernel(ensemble_x[:,i,:,:], ensemble_y[:,j,:,:]), self.reduce_dims)
+                    count += 1
+        elif self.member_dim == 2:
+            for i in range(ensemble_size):
+                for j in range(i, ensemble_size):
+                    xx_mean += torch.mean(self.kernel(ensemble_x[:,:,i,:], ensemble_x[:,:,j,:]), self.reduce_dims)
+                    yy_mean += torch.mean(self.kernel(ensemble_y[:,:,i,:], ensemble_y[:,:,j,:]), self.reduce_dims)
+                    xy_mean += torch.mean(self.kernel(ensemble_x[:,:,i,:], ensemble_y[:,:,j,:]), self.reduce_dims)
+                    count += 1
+        else:
+            for i in range(ensemble_size):
+                for j in range(i, ensemble_size):
+                    xx_mean += torch.mean(self.kernel(ensemble_x[:,:,:,i], ensemble_x[:,:,:,j]), self.reduce_dims)
+                    yy_mean += torch.mean(self.kernel(ensemble_y[:,:,:,i], ensemble_y[:,:,:,j]), self.reduce_dims)
+                    xy_mean += torch.mean(self.kernel(ensemble_x[:,:,:,i], ensemble_y[:,:,:,j]), self.reduce_dims)
+                    count += 1
+        xx_mean /= count
+        yy_mean /= count
+        xy_mean /= count
+        return torch.as_tensor(math.sqrt(xx_mean + yy_mean - 2*xy_mean))
+        
+    
+# Kernels for mmd
+class rbf(object):
+    """
+    Gaussian kernel for mmd.
+    """
+    def __init__(self, sigma):
+        super().__init__()
+        
+        self.sigma_sq = sigma*sigma
+        
+    
+    def __call__(self, x, y):
+        """
+        x and y are tensors.
+        """
+        return torch.exp(- torch.square(y - x) / (2*self.sigma_sq))
+
 def compute_probabilistic_scores(
     test_db,
     model,
