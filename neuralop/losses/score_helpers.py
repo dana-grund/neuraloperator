@@ -2,6 +2,8 @@ import torch
 from tabulate import tabulate
 import matplotlib.pyplot as plt
 import numpy as np
+import math
+import os
 
 
 def compute_deterministic_scores(
@@ -82,22 +84,45 @@ def print_scores(
     
 def plot_scores(
     scores_det=None,
-    scores_prob=None
+    scores_prob=None,
+    train_losses=None,
+    batchSize=None,
+    trainSetSize=None,
+    save_folder=None,
+    initial_eval=True
 ):
     """
+    scores_det and scores_prob dictionary, train_losses list. If train_losses is given then batch size and set size must be given.
     """
+    
+    # Also put out the raw data
+    writeData(scores_det, scores_prob, train_losses, save_folder, initial_eval)
+    
     if scores_det[0] is None and scores_prob[0] is not None:
-        fig, axs = plt.subplots(1)
-        fig.tight_layout(pad=3.0)
-        fig.set_size_inches(8,7)
-        probMat = dictToArray(scores_prob=scores_prob)
-        for scoreIdx in range(probMat.shape[0]):
-            x = np.arange(probMat.shape[1])
-            axs.plot(x, probMat[scoreIdx,:], label=list(scores_prob[0].keys())[scoreIdx])
-        axs.set(xlabel='Epoch', ylabel='Error')
-        axs.set_xticks(range(probMat.shape[1]))
-        axs.legend()
-        axs.set_title('Probabilistic errors')
+        if len(train_losses) == 0:
+            fig, axs = plt.subplots(1)
+            fig.tight_layout(pad=3.0)
+            fig.set_size_inches(8,7)
+            probMat = dictToArray(scores_prob=scores_prob)
+            for scoreIdx in range(probMat.shape[0]):
+                x = np.arange(probMat.shape[1])
+                axs.plot(x, probMat[scoreIdx,:], label=list(scores_prob[0].keys())[scoreIdx])
+            axs.set(xlabel='Epoch', ylabel='Error')
+            axs.set_xticks(range(probMat.shape[1]))
+            axs.legend()
+            axs.set_title('Probabilistic errors')
+        else:
+            fig, axs = plt.subplots(2)
+            fig.tight_layout(pad=3.0)
+            fig.set_size_inches(8,7)
+            probMat = dictToArray(scores_prob=scores_prob)
+            for scoreIdx in range(probMat.shape[0]):
+                x = np.arange(probMat.shape[1])
+                axs[1].plot(x, probMat[scoreIdx,:], label=list(scores_prob[0].keys())[scoreIdx])
+            axs[1].set(xlabel='Epoch', ylabel='Error')
+            axs[1].set_xticks(range(probMat.shape[1]))
+            axs[1].legend()
+            axs[1].set_title('Probabilistic errors')
         
     elif scores_det[0] is not None and scores_prob[0] is None:
         fig, axs = plt.subplots(1)
@@ -129,7 +154,36 @@ def plot_scores(
             ax.legend()
         axs[0].set_title('Deterministic errors')
         axs[1].set_title('Probabilistic errors')
-    plt.savefig("train_errors.png")
+    
+    if len(train_losses) != 0:
+        if scores_det[0] is not None and scores_prob[0] is None:
+            if initial_eval:
+                pad = [np.NaN] * math.ceil(trainSetSize/batchSize)
+                train_losses = pad + train_losses
+            x_loss = np.linspace(0, len(scores_det)-1, len(train_losses))
+            axs.plot(x_loss, train_losses, label='Training loss')
+            axs.legend()
+        elif scores_det[0] is None and scores_prob[0] is None:
+            fig, axs = plt.subplots(1)
+            fig.tight_layout(pad=3.0)
+            fig.set_size_inches(8,7)
+            x_loss = np.linspace(0, len(train_losses), len(train_losses))
+            axs.plot(x_loss, train_losses, label='Training loss')
+            axs.set(xlabel='Batch', ylabel='Loss')
+            axs.set_title('Trainig loss')
+            axs.legend()
+        else:
+            if initial_eval:
+                pad = [np.NaN] * math.ceil(trainSetSize/batchSize)
+                train_losses = pad + train_losses
+            x_loss = np.linspace(0, len(scores_det)-1, len(train_losses))
+            axs[0].plot(x_loss, train_losses, label='Training loss')
+            axs[0].legend()
+    
+    if save_folder is None:
+        plt.savefig("train_errors.png")
+    else:
+        plt.savefig(os.path.join(save_folder, "train_errors.png"))
     
     
 def dictToArray(
@@ -172,3 +226,49 @@ def dictToArray(
                 scoreIdx += 1
                 
         return detMat
+
+def writeData(scores_det, scores_prob, train_losses, save_folder, initial_eval):
+    """
+    """
+    if save_folder is None:
+        file = open('train_errors_data.txt', 'w')
+    else:
+        file = open(os.path.join(save_folder, 'train_errors_data.txt'), 'w')
+        
+    if initial_eval:
+        file.write('Initial eval: True\n')
+    else:
+        file.write('Initial eval: False\n')
+    
+    if scores_det[0] is not None:
+        file.write('Deterministic scores\n')
+        for loss in scores_det[0]:
+            file.write(loss+' ')
+        file.write('\n')
+
+        for dict in scores_det:
+            file.write('\n')
+            for loss in dict:
+                file.write(f'{dict[loss]} ')
+            
+        file.write('\n')
+        
+    if scores_prob[0] is not None:
+        file.write('\nProbabilistic scores\n')
+        for loss in scores_prob[0]:
+            file.write(loss+' ')
+        file.write('\n')
+
+        for dict in scores_prob:
+            file.write('\n')
+            for loss in dict:
+                file.write(f'{dict[loss]} ')
+        
+        file.write('\n')
+        
+    if len(train_losses) != 0:
+        file.write('\nTraining loss\n')
+        for loss in train_losses:
+            file.write(f'\n{loss}')
+            
+    file.close()
