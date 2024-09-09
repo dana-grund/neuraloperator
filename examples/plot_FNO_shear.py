@@ -14,13 +14,14 @@ import sys
 import os
 import time
 import zarr
+import numpy as np
 
 from neuralop.models import TFNO
 from neuralop import Trainer
 from neuralop.datasets import load_shear_flow, plot_shear_flow_test
 from neuralop.utils import count_model_params
-from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores, compute_deterministic_scores, print_scores, hacky_crps, plot_scores
-
+from neuralop import LpLoss, H1Loss, MedianAbsoluteLoss, gaussian_crps, compute_probabilistic_scores, compute_deterministic_scores, print_scores, hacky_crps, plot_scores, lognormal_crps, ensemble_crps, mmd, rbf
+# Load model for forward pass folder = "/cluster/home/fstuehlinger/ba/git/dana-grund/neuraloperator/energy_plotting/actualInOut/" name = "fno_shear_n_train=40000_epoch=5_actualInOut_cpu" model = TFNO.from_checkpoint(save_folder=folder, save_name=name)
 parser = argparse.ArgumentParser(description='Train FNO for 2D shear')
 parser.add_argument('--ensemble', action=argparse.BooleanOptionalAction, default=False, required=False,
                     help='Use ensebmble data. Default: False')
@@ -35,7 +36,14 @@ args = parser.parse_args()
 if args.ensemble and args.res == 64:
     raise Exception('Ensemble data only available in 128.')
 
-device = 'cuda' if args.gpu else 'cpu'
+#device = 'cuda' if args.gpu else 'cpu'
+if args.gpu and torch.cuda.is_available():
+    device = torch.device("cuda")
+elif args.gpu and not torch.cuda.is_available():
+    assert False, 'No GPU available'
+else:
+    device = torch.device("cpu")
+
 folder = args.folder
 res = args.res
 ensemble = args.ensemble
@@ -45,19 +53,25 @@ if args.gpu:
     print(torch.cuda.get_device_name())
     
 
-zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N128.zarr")
-zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N64.zarr")
+#zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N128.zarr")
+#zarr.consolidate_metadata("/cluster/work/climate/webesimo/data_N64.zarr")
 
 # %%
 # Load the Navier--Stokes dataset
-train_loader, test_loaders, ensemble_loader, data_processor = load_shear_flow(
-        n_train=10,             # 40_000
-        batch_size=32, 
+batch_size = 32
+n_train = 40000
+n_epochs = 5
+predicted_t = 10
+n_tests = 10000
+train_loader, test_loaders, ensemble_loaders, data_processor = load_shear_flow(
+        n_train=n_train,             # 40_000
+        batch_size=batch_size, 
         train_resolution=res,
         test_resolutions=[128],  # [64,128], 
-        n_tests=[100],           # [10_000, 10_000],
+        n_tests=[n_tests],           # [10_000, 10_000],
         test_batch_sizes=[32],  # [32, 32],
         positional_encoding=True,
+        T=predicted_t
 )
 data_processor = data_processor.to(device)
 
@@ -68,8 +82,9 @@ model = TFNO(
             n_modes=(16, 16),
             in_channels=4,
             out_channels=2,
-            hidden_channels=32, 
+            hidden_channels=64,
             projection_channels=64, 
+            n_layers=4,
             factorization='tucker', 
             rank=0.42)
 # in_channels = 2 physical variables + 2 positional encoding
@@ -95,19 +110,21 @@ reductions = 'mean'
 l2loss = LpLoss(d=2, p=2, reduce_dims=reduce_dims, reductions=reductions)
 h1loss = H1Loss(d=2, reduce_dims=reduce_dims, reductions=reductions)
 l1loss = LpLoss(d=2, p=1, reduce_dims=reduce_dims, reductions=reductions)
-medianloss = MedianAbsoluteLoss(d=2, reduce_dims=reduce_dims, reductions=reductions)
 
 train_loss = h1loss
-eval_losses = {'l2': l2loss, 'h1': h1loss, 'l1': l1loss, 'median absolute': medianloss} # {'h1': h1loss, 'l2': l2loss}
+eval_losses = {'l2': l2loss, 'h1': h1loss, 'l1': l1loss} # {'h1': h1loss, 'l2': l2loss}
 
 # Probabilistic score metrics
 probab_scores = None
 if ensemble:
-    crps = gaussian_crps(member_dim=0, reduce_dims=None)
-    hackCrps = hacky_crps(member_dim=0, reduce_dims=None)
-    #crossEntropy = cross_entropy(member_dim=0)
+    ensembleCrps = ensemble_crps(member_dim=0, reduce_dims=None)
+    
+    median_sigma = torch.median(ensemble_loaders[0].dataset[0]['y'][:,:,:])
+    print(f'Gauss kernel sigma for mmd: {median_sigma}')
+    gauss_kernel = rbf(median_sigma)
+    maxMeanDiscr = mmd(gauss_kernel, member_dim=0, reduce_dims=None)
 
-    probab_scores = {'averaged_crps': crps, 'hacky_crps': hackCrps}
+    probab_scores = {'crps': ensembleCrps, 'mmd': maxMeanDiscr}
 
 
 # %%
@@ -123,7 +140,7 @@ sys.stdout.flush()
 
 # %% 
 # Create the trainer
-trainer = Trainer(model=model, n_epochs=5, # 20
+trainer = Trainer(model=model, n_epochs=n_epochs, # 20
                   device=device,
                   data_processor=data_processor,
                   wandb_log=False,
@@ -134,29 +151,35 @@ trainer = Trainer(model=model, n_epochs=5, # 20
 
 # %%
 # Actually train the model
+initial_evaluation=True
 start = time.time()
-trainErrors_det, trainErrors_prob = trainer.train(train_loader=train_loader,
+trainErrors_det, trainErrors_probIn, train_losses = trainer.train(train_loader=train_loader,
                                                   test_loaders=test_loaders,
                                                   optimizer=optimizer,
                                                   scheduler=scheduler, 
-                                                  regularizer=False, 
-                                                  ensemble_loader=ensemble_loader,
+                                                  regularizer=False,
+                                                  save_folder=folder,
+                                                  ensemble_loaders=ensemble_loaders,
                                                   training_loss=train_loss,
                                                   eval_losses=eval_losses,
                                                   prob_losses=probab_scores,
-                                                  loss_reductions=reductions)
-model.save_checkpoint(save_folder=folder, save_name='example_fno_shear')
+                                                  loss_reductions=reductions,
+                                                  initial_eval=initial_evaluation)
 end = time.time()
 print(f'Training took {end-start} s.')
 
-plot_scores(trainErrors_det, trainErrors_prob)
+# Plot training errors
+plot_scores(scores_det=trainErrors_det, scores_probIn=trainErrors_probIn, train_losses=train_losses, batchSize=batch_size, trainSetSize=n_train, save_folder="/cluster/home/fstuehlinger/ba/git/dana-grund/neuraloperator/examples/correctedEns/", initial_eval=initial_evaluation)
 
 # Test 
 start = time.time()
 test_db = test_loaders[128].dataset
-ensemble_db = ensemble_loader.dataset
-model = TFNO.from_checkpoint(save_folder=folder, save_name='example_fno_shear')
+ensemble_dbIn = ensemble_loaders[0].dataset
+ensemble_dbOut = ensemble_loaders[1].dataset
+# Load model from checkpoint (saved during training)
+model = TFNO.from_checkpoint(save_folder=folder, save_name=f'fno_shear_n_train={len(train_loader.dataset)}_epoch={n_epochs}_correctedEns')
 model.to(device)
+# Compute deterministic scores
 absScores, relScores = compute_deterministic_scores(
     test_db,
     model,
@@ -165,17 +188,27 @@ absScores, relScores = compute_deterministic_scores(
 )
 
 if ensemble:
-    probScores = compute_probabilistic_scores(
-        ensemble_db,
+    # Compute probabilistic scores
+    probScoresIn = compute_probabilistic_scores(
+        ensemble_dbIn,
+        model,
+        data_processor,
+        probab_scores
+    )
+    probScoresOut = compute_probabilistic_scores(
+        ensemble_dbOut,
         model,
         data_processor,
         probab_scores
     )
 
-    print_scores(scores_abs=absScores, scores_rel=relScores, reductions=reductions, probScores=probScores)
+    # Print computed scores
+    print_scores(scores_abs=absScores, scores_rel=relScores, reductions=reductions, probScoresIn=probScoresIn, probScoresOut=probScoresOut)
 
 else:
+    # Print computed scores
     print_scores(scores_abs=absScores, scores_rel=relScores, reductions=reductions)
+
 end = time.time()
 print(f'Evaluation took {end-start} s.')
 
@@ -189,18 +222,30 @@ plot_shear_flow_test(
     data_processor,
     n_plot=5,
     save_file=os.path.join(
-        folder,'fig-example_shear_n_train=10_n_epochs=2.png'
+        folder,f'fig-example_shear_n_train={n_train}_n_epochs={n_epochs}_correctedEns.png'
     ),
 )
 
 if ensemble:
     # Once again for ensemble
     plot_shear_flow_test(
-        ensemble_db,
+        ensemble_dbIn,
         model,
         data_processor,
         n_plot=5,
         save_file=os.path.join(
-            folder,'fig-example_shear_n_train=100_n_epochs=2_ensemble.png'
+            folder,f'fig-example_shear_n_train={n_train}_n_epochs={n_epochs}_correctedEns_ensembleIn.png'
         ),
     )
+
+    # Once again for ensemble
+    plot_shear_flow_test(
+        ensemble_dbOut,
+        model,
+        data_processor,
+        n_plot=5,
+        save_file=os.path.join(
+            folder,f'fig-example_shear_n_train={n_train}_n_epochs={n_epochs}_correctedEns_ensembleOut.png'
+        ),
+    )
+
