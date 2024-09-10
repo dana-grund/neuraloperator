@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import math
-#import xskillscore as xs
 
 import torch
 from torch.utils.data import Dataset
@@ -118,21 +117,24 @@ def load_shear_flow(
         test_loaders[res] = test_loader 
         
     """Load ensemble data"""
+    ensemble_loaders = []
     print(
-        f"Loading training data at resolution {train_resolution} with {n_train} samples "
+        f"Loading ensemble data at resolution 128 with 1000 samples "
         f"and batch-size={batch_size}"
     )
-    ensemble_db = ShearLayerDataset(
+    # In distribution
+    ensemble_db_inDist = ShearLayerDataset(
         128,
-        n_train,
+        1000,
         channel_dim,
         which='test',
         T=T,
-        ensemble=True
+        ensemble=True,
+        outOfDist=False
     )
     
-    ensemble_loader = torch.utils.data.DataLoader(
-        ensemble_db,
+    ensemble_loader_inDist = torch.utils.data.DataLoader(
+        ensemble_db_inDist,
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
@@ -140,6 +142,30 @@ def load_shear_flow(
         persistent_workers=False,
     )
 
+    ensemble_loaders.append(ensemble_loader_inDist)
+
+    # Out of distribution
+    ensemble_db_outDist = ShearLayerDataset(
+        128,
+        1000,
+        channel_dim,
+        which='test',
+        T=T,
+        ensemble=True,
+        outOfDist=True
+    )
+    
+    ensemble_loader_outDist = torch.utils.data.DataLoader(
+        ensemble_db_outDist,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+        persistent_workers=False,
+    )
+
+    ensemble_loaders.append(ensemble_loader_outDist)
+    
 
     """Input encoder"""
     if encode_input:
@@ -201,7 +227,7 @@ def load_shear_flow(
         positional_encoding=pos_encoding
     )
     
-    return train_loader, test_loaders, ensemble_loader, data_processor
+    return train_loader, test_loaders, ensemble_loaders, data_processor
 
 def plot_shear_flow_test(
     test_db,
@@ -226,38 +252,38 @@ def plot_shear_flow_test(
 
         x = data['x'][0,:,:]            # plot u component only
         y = data['y'].squeeze()[0,:,:]  # plot u component only
-        #print(x.shape)
         
         # Bring x and y back to cpu memory for the plotting
         x = x.to(device="cpu")
         y = y.to(device="cpu")
         # Same for out
         out = out.to(device="cpu")
+
+        # Transpose to get right direction
+        x = torch.transpose(x, 0, 1)
+        y = torch.transpose(y, 0, 1)
+        out = torch.transpose(out.squeeze()[0,:,:].detach(), 0, 1).numpy()
         
         ax = fig.add_subplot(n_plot, 3, index*3 + 1)
-        ax.imshow(x, cmap='gray')
+        ax.imshow(x, origin="lower")
         if index == 0: 
             ax.set_title('Input x')
         plt.xticks([], [])
         plt.yticks([], [])
 
         ax = fig.add_subplot(n_plot, 3, index*3 + 2)
-        ax.imshow(y)
+        ax.imshow(y, origin="lower")
         if index == 0: 
             ax.set_title('Ground-truth y')
         plt.xticks([], [])
         plt.yticks([], [])
 
         ax = fig.add_subplot(n_plot, 3, index*3 + 3)
-        ax.imshow(out.squeeze()[0,:,:].detach().numpy())
+        ax.imshow(out, origin="lower")
         if index == 0: 
             ax.set_title('Model prediction')
         plt.xticks([], [])
         plt.yticks([], [])
-        
-    #rmse = compute_deterministic_score(out, data["y"].squeeze())
-    
-    #print(f"{rmse.size}")
     
     title = 'Inputs, ground-truth output and prediction.'
 
@@ -266,6 +292,69 @@ def plot_shear_flow_test(
     plt.savefig(save_file)
     fig.show()
     
+
+def plot_shear_flow_test_v(
+    test_db,
+    model,
+    data_processor,
+    n_plot=5,
+    save_file='fig-shear.png',
+):
+    """
+    Plots the shear flow dataset, v instead of u.
+    Rows: the first n_plot test samples.
+    Columns: inputs (t=0), labels (t>0), prediction (t>0).    
+    """
+    fig = plt.figure(figsize=(7, 2*n_plot))
+    for index in range(n_plot):
+        
+        data = test_db[index]
+        data = data_processor.preprocess(data, batched=False)
+            
+        x = data['x'].unsqueeze(0)
+        out = model(x)                  # input u and v
+
+        x = data['x'][1,:,:]            # plot v component only
+        y = data['y'].squeeze()[1,:,:]  # plot v component only
+        
+        # Bring x and y back to cpu memory for the plotting
+        x = x.to(device="cpu")
+        y = y.to(device="cpu")
+        # Same for out
+        out = out.to(device="cpu")
+
+        # Transpose to get right direction
+        x = torch.transpose(x, 0, 1)
+        y = torch.transpose(y, 0, 1)
+        out = torch.transpose(out.squeeze()[0,:,:].detach(), 0, 1).numpy()
+        
+        ax = fig.add_subplot(n_plot, 3, index*3 + 1)
+        ax.imshow(x, origin="lower")
+        if index == 0: 
+            ax.set_title('Input x')
+        plt.xticks([], [])
+        plt.yticks([], [])
+
+        ax = fig.add_subplot(n_plot, 3, index*3 + 2)
+        ax.imshow(y, origin="lower")
+        if index == 0: 
+            ax.set_title('Ground-truth y')
+        plt.xticks([], [])
+        plt.yticks([], [])
+
+        ax = fig.add_subplot(n_plot, 3, index*3 + 3)
+        ax.imshow(out, origin="lower")
+        if index == 0: 
+            ax.set_title('Model prediction')
+        plt.xticks([], [])
+        plt.yticks([], [])
+    
+    title = 'Inputs, ground-truth output and prediction.'
+
+    fig.suptitle(title, y=0.98)
+    plt.tight_layout()
+    plt.savefig(save_file)
+    fig.show()
     
 #------------------------------------------------------------------------------
 
@@ -273,6 +362,12 @@ def plot_shear_flow_test(
 # https://github.com/bogdanraonic3/ConvolutionalNeuralOperator/ .
 
 class ShearLayerDataset(Dataset):
+    """
+    Dataset of shear data.
+    ensemble==True && outOfDist==True -> stability dataset
+    ensemble==True && outOfDist==False -> ensemble dataset
+    ensemble==False -> regular shear dataset
+    """
     def __init__(
         self,
         res, # fixed, not list
@@ -280,14 +375,21 @@ class ShearLayerDataset(Dataset):
         channel_dim,
         which, # train, test
         T, # 1,2,3,4
-        ensemble=False
+        ensemble=False,
+        outOfDist=False
     ):
         """Data location"""
         p = '/cluster/work/climate/webesimo'
         if ensemble:
-            self.file_data = os.path.join(
-                p, 'data_macro_micro.zarr'
-            )
+            p = '/cluster/work/climate/dgrund/data_shear_layer_2D_macro_micro/'
+            if outOfDist:
+                self.file_data = os.path.join(
+                    p, 'macro_micro_2d_id_2_clean.zarr'
+                )
+            else:
+                self.file_data = os.path.join(
+                    p, 'macro_micro_2d_id_3_corrected_clean.zarr'
+                )
         else:
             self.file_data = os.path.join(
                 p, f'data_N{res}.zarr'
@@ -356,6 +458,7 @@ class ShearLayerDataset(Dataset):
             consolidated=True,
         ).sel(member_macro=macro).sel(member_micro=micro)
         
+        # Stack u and v
         inputs = np.stack(
             [
                 ds['u'].isel(time=0).to_numpy(),
@@ -381,6 +484,7 @@ class ShearLayerDataset(Dataset):
             labels
         ).type(torch.float32)
 
+        # Return as dictionary
         return {
             'x':inputs,
             'y':labels,
@@ -391,6 +495,9 @@ class ShearLayerDataset(Dataset):
         self,
         index
     ):
+        """
+        UNFINISHED/NEVER USED 
+        """
         assert self.ensemble, f'This function can only be called if data set has ensembles.'
         
         if self.ensemble:
