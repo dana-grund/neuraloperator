@@ -16,7 +16,14 @@ from neuralop import LpLoss, H1Loss, compute_probabilistic_scores, compute_deter
 
 def training(config):
     """
+    Training routine used in the hyperparameter tuning.
+    config is a dictionary which specifies the hyperparameters:
+        'n_modes' -> number of Fourier modes
+        'hidden_channels' -> number of hidden channels
+        'n_layers' -> number of Fourier layers
+    Reports h1 training loss after every epoch
     """
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if not torch.cuda.is_available():
         print('Warning: No GPU available! Training on CPU')
@@ -25,10 +32,10 @@ def training(config):
         
     # Load the Navier--Stokes dataset
     batch_size = 32
-    n_train = 10
-    n_epochs = 2
+    n_train = 10000
+    n_epochs = 5
     predicted_t = 10
-    n_tests = 10
+    n_tests = 10000
     train_loader, test_loaders, ensemble_loader, data_processor = load_shear_flow(
             n_train=n_train,             # 40_000
             batch_size=batch_size, 
@@ -117,14 +124,15 @@ def training(config):
                                                                       optimizer=optimizer,
                                                                       scheduler=scheduler, 
                                                                       regularizer=False,
-                                                                      save_folder=train_folder,#ensemble_loader=ensemble_loader,
+                                                                      save_folder=train_folder,
+                                                                      ensemble_loader=ensemble_loader,
                                                                       training_loss=train_loss,
                                                                       eval_losses=eval_losses,
                                                                       prob_losses=probab_scores,
                                                                       loss_reductions=reductions,
                                                                       initial_eval=initial_eval,
                                                                       checkpoint=False)
-        #model.save_checkpoint(save_folder=train_folder, save_name='example_fno_shear')
+        
         if initial_eval:
             assert len(NewtrainErrors_det) == 2, 'Wrong train error list length: {len(NewtrainErrors_det)} instead of 2.'
         else:
@@ -136,7 +144,7 @@ def training(config):
         checkpoint = None
         epoch_dir = os.path.join(run_directory, f"epoch={i}")
         os.mkdir(epoch_dir)
-        if (i + 1) % 5 == 0:
+        if i % 2 == 0:
             # This saves the model to the trial directory
             torch.save(
                 model.state_dict(),
